@@ -1,0 +1,360 @@
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  color-scheme: light;
+  --primary: #2563eb;
+  --primary-strong: #3b82f6;
+  --primary-soft: #eff6ff;
+  --accent: #3b82f6;
+  --success: #10b981;
+  --warning: #f59e0b;
+  --danger: #ef4444;
+  --bg: #f8fafc;
+  --bg-elevated: color-mix(in srgb, white 92%, var(--primary-soft) 8%);
+  --bg-card: color-mix(in srgb, white 88%, var(--primary-soft) 12%);
+  --bg-panel: #eff6ff;
+  --bg-sidebar: color-mix(in srgb, var(--primary-soft) 90%, white 10%);
+  --bg-soft: color-mix(in srgb, var(--primary-soft) 74%, var(--bg) 26%);
+  --border: #dbeafe;
+  --border-soft: color-mix(in srgb, var(--border) 82%, white 18%);
+  --border-strong: #3b82f6;
+  --text: #1e293b;
+  --text-muted: #64748b;
+  --text-soft: color-mix(in srgb, var(--text-muted) 84%, white 16%);
+  --radius: 16px;
+  --radius-lg: 24px;
+  --shadow-sm: 0 10px 24px rgba(37, 99, 235, 0.08);
+  --shadow: 0 20px 42px rgba(37, 99, 235, 0.12);
+  --el-color-primary: var(--primary);
+  --el-color-primary-light-3: var(--primary-strong);
+  --el-color-primary-light-5: color-mix(in srgb, var(--primary) 66%, white 34%);
+  --el-color-primary-light-7: color-mix(in srgb, var(--primary) 42%, white 58%);
+  --el-color-primary-light-8: color-mix(in srgb, var(--primary) 24%, white 76%);
+  --el-color-primary-light-9: var(--primary-soft);
+  --el-color-success: var(--success);
+  --el-color-success-light-9: color-mix(in srgb, var(--success) 12%, white 88%);
+  --el-color-warning: var(--warning);
+  --el-color-warning-light-9: color-mix(in srgb, var(--warning) 14%, white 86%);
+  --el-color-danger: var(--danger);
+  --el-color-danger-light-9: color-mix(in srgb, var(--danger) 12%, white 88%);
+  --el-bg-color: var(--bg-elevated);
+  --el-bg-color-overlay: var(--bg-elevated);
+  --el-text-color-primary: var(--text);
+  --el-text-color-regular: var(--text-muted);
+  --el-text-color-secondary: var(--text-soft);
+  --el-text-color-placeholder: color-mix(in srgb, var(--text-muted) 74%, white 26%);
+  --el-border-color: var(--border);
+  --el-border-color-light: var(--border-soft);
+  --el-fill-color-blank: var(--bg-elevated);
+  --el-fill-color-light: color-mix(in srgb, var(--primary-soft) 72%, white 28%);
+  --el-fill-color: color-mix(in srgb, var(--primary-soft) 84%, var(--bg) 16%);
+  --el-fill-color-darker: color-mix(in srgb, var(--primary-soft) 78%, var(--border) 22%);
+  --el-mask-color: rgba(30, 41, 59, 0.18);
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+  --primary: #60a5fa;
+  --primary-strong: #93c5fd;
+  --primary-soft: #172554;
+  --accent: #93c5fd;
+  --success: #34d399;
+  --warning: #fbbf24;
+  --danger: #f87171;
+  --bg: #0f172a;
+  --bg-elevated: #111827;
+  --bg-card: color-mix(in srgb, var(--bg-elevated) 78%, var(--primary-soft) 22%);
+  --bg-panel: #1e293b;
+  --bg-sidebar: color-mix(in srgb, var(--bg) 76%, var(--primary-soft) 24%);
+  --bg-soft: color-mix(in srgb, var(--bg-panel) 72%, var(--primary-soft) 28%);
+  --border: #334155;
+  --border-soft: color-mix(in srgb, var(--border) 82%, var(--bg-panel) 18%);
+  --border-strong: color-mix(in srgb, var(--primary) 72%, var(--border) 28%);
+  --text: #e2e8f0;
+  --text-muted: #94a3b8;
+  --text-soft: color-mix(in srgb, var(--text-muted) 72%, var(--text) 28%);
+  --shadow-sm: 0 12px 28px rgba(2, 6, 23, 0.32);
+  --shadow: 0 26px 60px rgba(2, 6, 23, 0.52);
+  --el-color-primary: var(--primary);
+  --el-color-primary-light-3: var(--primary-strong);
+  --el-color-primary-light-5: color-mix(in srgb, var(--primary) 72%, white 28%);
+  --el-color-primary-light-7: color-mix(in srgb, var(--primary) 56%, white 44%);
+  --el-color-primary-light-8: color-mix(in srgb, var(--primary) 40%, white 60%);
+  --el-color-primary-light-9: color-mix(in srgb, var(--primary) 18%, var(--primary-soft) 82%);
+  --el-color-success: var(--success);
+  --el-color-success-light-9: color-mix(in srgb, var(--success) 20%, var(--bg-elevated) 80%);
+  --el-color-warning: var(--warning);
+  --el-color-warning-light-9: color-mix(in srgb, var(--warning) 20%, var(--bg-elevated) 80%);
+  --el-color-danger: var(--danger);
+  --el-color-danger-light-9: color-mix(in srgb, var(--danger) 20%, var(--bg-elevated) 80%);
+  --el-bg-color: var(--bg-elevated);
+  --el-bg-color-overlay: var(--bg-elevated);
+  --el-text-color-primary: var(--text);
+  --el-text-color-regular: var(--text-muted);
+  --el-text-color-secondary: var(--text-soft);
+  --el-text-color-placeholder: color-mix(in srgb, var(--text-muted) 82%, var(--bg) 18%);
+  --el-border-color: var(--border);
+  --el-border-color-light: var(--border-soft);
+  --el-fill-color-blank: var(--bg-elevated);
+  --el-fill-color-light: color-mix(in srgb, var(--bg-panel) 74%, var(--bg) 26%);
+  --el-fill-color: color-mix(in srgb, var(--bg-panel) 84%, var(--bg) 16%);
+  --el-fill-color-darker: color-mix(in srgb, var(--bg-panel) 68%, var(--border) 32%);
+  --el-mask-color: rgba(15, 23, 42, 0.68);
+}
+
+html,
+body,
+#app {
+  min-height: 100%;
+  font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 16px;
+  line-height: 1.5;
+  font-kerning: normal;
+}
+
+body {
+  background:
+    linear-gradient(180deg, color-mix(in oklab, var(--primary) 5%, transparent), transparent 240px),
+    var(--bg);
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+::selection {
+  background: color-mix(in oklab, var(--primary) 22%, transparent);
+}
+
+.el-input__wrapper,
+.el-select__wrapper,
+.el-textarea__inner,
+.el-date-editor.el-input,
+.el-date-editor.el-input__wrapper {
+  background: color-mix(in oklab, var(--bg-elevated) 92%, var(--bg) 8%) !important;
+  box-shadow: 0 0 0 1px var(--border) inset !important;
+  border-radius: 12px !important;
+  min-height: 44px;
+}
+
+.el-textarea__inner {
+  min-height: 120px;
+  line-height: 1.65 !important;
+}
+
+.el-input__wrapper:hover,
+.el-select__wrapper:hover,
+.el-textarea__inner:hover {
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--primary) 36%, var(--border)) inset !important;
+}
+
+.el-input.is-focus .el-input__wrapper,
+.el-select .is-focus .el-select__wrapper,
+.el-textarea__inner:focus {
+  box-shadow: 0 0 0 1px var(--border-strong) inset !important;
+}
+
+.el-dialog,
+.el-picker-panel,
+.el-card {
+  background: var(--bg-elevated) !important;
+  border: 1px solid var(--border) !important;
+  box-shadow: var(--shadow) !important;
+}
+
+.el-dialog {
+  border-radius: 20px !important;
+}
+
+.el-card {
+  border-radius: var(--radius) !important;
+}
+
+.el-dialog__header {
+  border-bottom: 1px solid var(--border-soft);
+  padding-bottom: 14px;
+}
+
+.el-button {
+  border-radius: 12px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.01em;
+  min-height: 40px;
+  transition: transform 0.16s ease, box-shadow 0.16s ease, background 0.18s ease, border-color 0.18s ease !important;
+}
+
+.el-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 18px rgba(37, 99, 235, 0.12);
+}
+
+.el-button:active {
+  transform: translateY(1px);
+  box-shadow: none;
+}
+
+.el-button--primary {
+  background: var(--primary) !important;
+  border-color: var(--primary) !important;
+  color: color-mix(in oklab, white 88%, var(--text) 12%) !important;
+}
+
+.el-button--primary:hover {
+  background: var(--primary-strong) !important;
+  border-color: var(--primary-strong) !important;
+}
+
+.el-button--default,
+.el-button.is-plain {
+  background: color-mix(in oklab, var(--bg-elevated) 88%, var(--bg) 12%) !important;
+  border-color: var(--border) !important;
+  color: var(--text) !important;
+}
+
+.el-button--text {
+  color: var(--text-muted) !important;
+}
+
+.el-button--text:hover {
+  color: var(--text) !important;
+}
+
+.el-switch {
+  --el-switch-on-color: var(--primary);
+}
+
+.el-progress-bar__outer {
+  background: color-mix(in oklab, var(--bg-soft) 84%, var(--bg) 16%) !important;
+}
+
+.el-progress-bar__inner {
+  background: var(--primary) !important;
+}
+
+.el-table {
+  background: transparent !important;
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: color-mix(in oklab, var(--bg-panel) 92%, var(--bg) 8%);
+  --el-table-border-color: var(--border-soft);
+  --el-table-row-hover-bg-color: color-mix(in oklab, var(--primary) 6%, transparent);
+  --el-table-text-color: var(--text);
+  --el-table-header-text-color: var(--text-muted);
+}
+
+.el-table td,
+.el-table th {
+  border-bottom-color: var(--border-soft) !important;
+}
+
+.el-tabs__item {
+  font-weight: 600;
+}
+
+.card-tag {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border-soft);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.tag-uploading {
+  background: color-mix(in oklab, var(--accent) 12%, transparent);
+  color: color-mix(in oklab, var(--accent) 76%, var(--text) 24%);
+  border-color: color-mix(in oklab, var(--accent) 20%, var(--border));
+}
+
+.tag-processing {
+  background: color-mix(in oklab, var(--warning) 14%, transparent);
+  color: color-mix(in oklab, var(--warning) 78%, var(--text) 22%);
+  border-color: color-mix(in oklab, var(--warning) 20%, var(--border));
+}
+
+.tag-review {
+  background: color-mix(in oklab, var(--primary) 12%, transparent);
+  color: color-mix(in oklab, var(--primary) 78%, var(--text) 22%);
+  border-color: color-mix(in oklab, var(--primary) 20%, var(--border));
+}
+
+.tag-dispatched {
+  background: color-mix(in oklab, var(--success) 12%, transparent);
+  color: color-mix(in oklab, var(--success) 78%, var(--text) 22%);
+  border-color: color-mix(in oklab, var(--success) 18%, var(--border));
+}
+
+::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: color-mix(in oklab, var(--text-soft) 28%, transparent);
+  border-radius: 999px;
+}
+
+@keyframes fadeSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.56;
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.fade-slide-up {
+  animation: fadeSlideUp 0.38s ease both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
