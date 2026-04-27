@@ -163,6 +163,8 @@ async def upload_file(
     url: Optional[str] = Form(None),
     current_user: dict = Depends(get_current_user),
 ):
+    if not settings.transcription_enabled:
+        raise HTTPException(503, "Transcription is disabled in this deployment.")
     if not file and not url:
         raise HTTPException(400, "Provide either file or url.")
     if file and url:

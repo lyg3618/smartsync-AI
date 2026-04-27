@@ -35,6 +35,7 @@ class Settings(BaseSettings):
 
     # Transcription provider
     asr_provider: str = "local"
+    transcription_enabled: bool = True
 
     # Tingwu (Alibaba Cloud)
     tingwu_enabled: bool = False
