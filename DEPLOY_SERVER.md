@@ -1,38 +1,38 @@
-# SmartSync Server Deployment
+# SmartSync 服务器部署
 
-This deployment profile is trimmed for server use without speech transcription.
+此部署配置已精简，适用于不包含语音转写功能的服务器环境。
 
-## What is included
+## 包含内容
 
 - `mysql`
-- `backend`
-- `frontend`
+- `backend`（后端）
+- `frontend`（前端）
 - `nginx`
 
-## What is excluded
+## 排除内容
 
-- Local FunASR / FFmpeg transcription runtime
-- Tingwu-based speech transcription workflow
-- Worker container from the legacy compose file
+- 本地 FunASR / FFmpeg 转写运行时
+- 基于通义听悟的语音转写工作流
+- 旧版 compose 文件中的 Worker 容器
 
-## Required configuration
+## 必需配置
 
-Copy `.env.server.example` to `.env` in the project root and set real values.
+将项目根目录下的 `.env.server.example` 复制为 `.env`，并设置实际值。
 
-## Start
+## 启动方式
 
 ```bash
 docker compose -f docker-compose.server.yml up -d --build
 ```
 
-If your host only provides the legacy standalone command, use:
+如果您的主机仅支持旧版独立命令，请使用：
 
 ```bash
 docker-compose -f docker-compose.server.yml up -d --build
 ```
 
-## Notes
+## 注意事项
 
-- The upload/transcription API is intentionally disabled when `TRANSCRIPTION_ENABLED=false`.
-- `/uploads/` is proxied through Nginx to the backend static files endpoint.
-- A brand-new database still needs the existing base business tables imported first. The app only auto-creates some runtime tables and columns.
+- 当 `TRANSCRIPTION_ENABLED=false` 时，上传/转写 API 将被有意禁用。
+- `/uploads/` 路径通过 Nginx 代理到后端的静态文件端点。
+- 全新数据库需要先导入现有的基础业务表。应用程序仅自动创建部分运行时表和列。

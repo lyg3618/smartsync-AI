@@ -1,3 +1,5 @@
+version: "3.9"
+
 services:
   mysql:
     image: mysql:8.0
@@ -44,10 +46,10 @@ services:
       - "80"
 
   nginx:
-    image: nginx:alpine
+    image: nginx
     restart: unless-stopped
     ports:
-      - "80:80"
+      - "9090:80"
     volumes:
       - ./nginx/nginx.server.conf:/etc/nginx/nginx.conf:ro
     depends_on:
