@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+from datetime import datetime
 from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -7,6 +8,10 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.concurrency import iterate_in_threadpool
 import json
 from app.database import get_pool, close_pool, ensure_runtime_tables
+
+
+def _log_prefix() -> str:
+    return datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -28,12 +33,12 @@ app.add_middleware(
 class LoggingMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         # 1. Log incoming request details
-        print(f"\n{'='*60}")
-        print(f"⬇️ REQUEST: {request.method} {request.url}")
+        print(f"\n{_log_prefix()} {'='*60}")
+        print(f"{_log_prefix()} ⬇️ REQUEST: {request.method} {request.url}")
         
         # Query params
         if request.query_params:
-            print(f"🔍 PARAMS: {dict(request.query_params)}")
+            print(f"{_log_prefix()} 🔍 PARAMS: {dict(request.query_params)}")
             
         # Body (need to carefully read and restore it for the actual endpoint)
         body_bytes = b""
@@ -42,10 +47,10 @@ class LoggingMiddleware(BaseHTTPMiddleware):
             if body_bytes:
                 try:
                     parsed_body = json.loads(body_bytes)
-                    print(f"📦 BODY  : {json.dumps(parsed_body, ensure_ascii=False)}")
+                    print(f"{_log_prefix()} 📦 BODY  : {json.dumps(parsed_body, ensure_ascii=False)}")
                 except:
                     # Might be a file upload (multipart/form-data)
-                    print(f"📦 BODY  : <Raw data, length: {len(body_bytes)} bytes>")
+                    print(f"{_log_prefix()} 📦 BODY  : <Raw data, length: {len(body_bytes)} bytes>")
             
             # Since we read the body, we must replace it so downstream can read it again
             async def receive():
@@ -55,7 +60,7 @@ class LoggingMiddleware(BaseHTTPMiddleware):
         # 2. Process request & Log response
         response = await call_next(request)
         
-        print(f"⬆️ RESPONSE STATUS: {response.status_code}")
+        print(f"{_log_prefix()} ⬆️ RESPONSE STATUS: {response.status_code}")
         
         # Read the response body if possible (only for application/json)
         content_type = response.headers.get("content-type", "")
@@ -65,11 +70,11 @@ class LoggingMiddleware(BaseHTTPMiddleware):
             if response_body:
                 try:
                     resp_data = json.loads(response_body[0].decode())
-                    print(f"✅ RESULT : {json.dumps(resp_data, ensure_ascii=False)}")
+                    print(f"{_log_prefix()} ✅ RESULT : {json.dumps(resp_data, ensure_ascii=False)}")
                 except:
                     pass
                     
-        print(f"{'='*60}\n")
+        print(f"{_log_prefix()} {'='*60}\n")
         return response
 
 app.add_middleware(LoggingMiddleware)

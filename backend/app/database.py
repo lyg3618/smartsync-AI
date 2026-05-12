@@ -55,6 +55,9 @@ async def ensure_action_item_tracking_columns():
                 "completed_at": "ALTER TABLE action_items ADD COLUMN completed_at DATETIME NULL",
                 "progress_note": "ALTER TABLE action_items ADD COLUMN progress_note TEXT NULL",
                 "collab_message_target_id": "ALTER TABLE action_items ADD COLUMN collab_message_target_id VARCHAR(255) NULL",
+                "collab_message_login_id": "ALTER TABLE action_items ADD COLUMN collab_message_login_id VARCHAR(100) NULL",
+                "collab_message_title": "ALTER TABLE action_items ADD COLUMN collab_message_title VARCHAR(255) NULL",
+                "collab_message_context": "ALTER TABLE action_items ADD COLUMN collab_message_context TEXT NULL",
                 "collab_message_sent_at": "ALTER TABLE action_items ADD COLUMN collab_message_sent_at DATETIME NULL",
                 "collab_message_deleted_at": "ALTER TABLE action_items ADD COLUMN collab_message_deleted_at DATETIME NULL",
             }
