@@ -5,7 +5,6 @@
         <div class="search-header__copy">
           <div class="page-kicker">全文搜索</div>
           <h1>搜索会议</h1>
-          <p>可按会议名称、摘要、逐字稿和行动项搜索。</p>
         </div>
       </header>
 

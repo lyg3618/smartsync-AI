@@ -5,7 +5,6 @@
         <div class="settings-header__copy">
           <div class="page-kicker">系统设置</div>
           <h1>系统设置</h1>
-          <p>管理账号信息、协同分发配置、模型连接和成员资料。</p>
         </div>
       </header>
 
@@ -47,13 +46,6 @@
 
         <div class="settings-panel" :key="activeTab">
           <section v-if="activeTab === 'account'" class="settings-section">
-            <div class="section-header">
-              <div>
-                <div class="section-kicker">个人资料</div>
-                <h2>基础信息</h2>
-                <p>显示名称、邮箱和协同号会用于任务分发和消息推送。</p>
-              </div>
-            </div>
 
             <div class="form-grid">
               <div class="field field--full">
@@ -80,14 +72,6 @@
           </section>
 
           <section v-else-if="activeTab === 'security'" class="settings-section">
-            <div class="section-header">
-              <div>
-                <div class="section-kicker">账户安全</div>
-                <h2>修改密码</h2>
-                <p>修改成功后需要重新登录。</p>
-              </div>
-            </div>
-
             <div class="form-grid form-grid--single">
               <div class="field">
                 <label for="old-password">当前密码</label>
@@ -109,14 +93,6 @@
           </section>
 
           <section v-else-if="activeTab === 'notifications'" class="settings-section">
-            <div class="section-header">
-              <div>
-                <div class="section-kicker">通知偏好</div>
-                <h2>提醒开关</h2>
-                <p>当前仍保存到浏览器本地，用于控制个人提醒展示。</p>
-              </div>
-            </div>
-
             <div class="settings-list">
               <div v-for="item in notifications" :key="item.key" class="settings-list__row">
                 <div>
@@ -133,13 +109,6 @@
           </section>
 
           <section v-else-if="activeTab === 'dispatch'" class="settings-section">
-            <div class="section-header">
-              <div>
-                <div class="section-kicker">协同分发</div>
-                <h2>任务分发配置</h2>
-                <p>控制会议任务分发和变更同步时，是否通过邮箱和协同消息发送。</p>
-              </div>
-            </div>
 
             <div class="form-grid">
               <div class="field field--full">
@@ -191,11 +160,6 @@
 
           <section v-else-if="activeTab === 'llm'" class="settings-section">
             <div class="section-header">
-              <div>
-                <div class="section-kicker">模型连接</div>
-                <h2>模型连接</h2>
-                <p>新建、测试并切换模型配置。</p>
-              </div>
               <el-button @click="startCreateLlmConfig">新建配置</el-button>
             </div>
 
@@ -258,49 +222,87 @@
           </section>
 
           <section v-else-if="activeTab === 'members'" class="settings-section">
-            <div class="section-header">
-              <div>
-                <div class="section-kicker">成员管理</div>
-                <h2>成员管理</h2>
-                <p>成员邮箱和协同号会参与任务分发。</p>
+            <div class="members-shell">
+              <div class="members-hero">
+                <div class="members-hero__copy">
+                  <p class="members-hero__eyebrow">成员名录</p>
+                  <h3>维护协同分发成员</h3>
+                </div>
+                <div class="members-hero__stats">
+                  <div class="members-stat">
+                    <span>成员数量</span>
+                    <strong>{{ contacts.length }}</strong>
+                  </div>
+                  <div class="members-stat">
+                    <span>已配置邮箱</span>
+                    <strong>{{ contactsWithEmailCount }}</strong>
+                  </div>
+                  <div class="members-stat">
+                    <span>已配置协同号</span>
+                    <strong>{{ contactsWithCollabCount }}</strong>
+                  </div>
+                </div>
+              </div>
+
+              <div class="members-toolbar">
+                <div class="members-toolbar__hint">
+                  <span class="members-toolbar__label">成员列表</span>
+                </div>
+                <el-button type="primary" size="large" @click="openAddContactDialog">新增成员</el-button>
+              </div>
+
+              <div class="members-table-shell">
+                <el-table
+                  :data="contacts"
+                  v-loading="loadingContacts"
+                  class="contacts-table"
+                  height="100%"
+                  empty-text="暂无成员数据。"
+                >
+                  <el-table-column prop="name" label="姓名" min-width="140" />
+                  <el-table-column prop="email" label="邮箱" min-width="220" />
+                  <el-table-column prop="collab_no" label="协同号" min-width="160" />
+                  <el-table-column label="操作" width="180" fixed="right">
+                    <template #default="{ row }">
+                      <el-button text type="primary" @click="openEditContact(row)">编辑</el-button>
+                      <el-button text type="danger" @click="deleteContact(row.id)">删除</el-button>
+                    </template>
+                  </el-table-column>
+                </el-table>
               </div>
             </div>
-
-            <div class="member-create">
-              <div class="form-grid member-grid">
-                <div class="field">
-                  <label for="member-name">姓名</label>
-                  <el-input id="member-name" v-model="newContact.name" size="large" placeholder="请输入成员姓名" />
-                </div>
-                <div class="field">
-                  <label for="member-email">邮箱</label>
-                  <el-input id="member-email" v-model="newContact.email" size="large" placeholder="可留空" />
-                </div>
-                <div class="field field--full">
-                  <label for="member-collab">协同号</label>
-                  <el-input id="member-collab" v-model="newContact.collab_no" size="large" placeholder="请输入协同号" />
-                </div>
-              </div>
-
-              <div class="section-actions">
-                <el-button type="primary" :loading="addingContact" @click="addContact">添加成员</el-button>
-              </div>
-            </div>
-
-            <el-table :data="contacts" v-loading="loadingContacts" class="contacts-table" empty-text="暂无成员数据。">
-              <el-table-column prop="name" label="姓名" min-width="140" />
-              <el-table-column prop="email" label="邮箱" min-width="220" />
-              <el-table-column prop="collab_no" label="协同号" min-width="160" />
-              <el-table-column label="操作" width="180" fixed="right">
-                <template #default="{ row }">
-                  <el-button text type="primary" @click="openEditContact(row)">编辑</el-button>
-                  <el-button text type="danger" @click="deleteContact(row.id)">删除</el-button>
-                </template>
-              </el-table-column>
-            </el-table>
           </section>
         </div>
       </section>
+
+      <el-dialog v-model="addContactDialogVisible" title="新增成员" width="560px" destroy-on-close>
+        <div class="member-dialog">
+          <div class="member-dialog__intro">
+            <h3>创建分发成员</h3>
+            <p>新增成员后可用于会议任务分发，默认登录密码为 123456。</p>
+          </div>
+          <div class="form-grid member-grid">
+            <div class="field">
+              <label for="member-name">姓名</label>
+              <el-input id="member-name" v-model="newContact.name" size="large" placeholder="请输入成员姓名" />
+            </div>
+            <div class="field">
+              <label for="member-email">邮箱</label>
+              <el-input id="member-email" v-model="newContact.email" size="large" placeholder="可留空" />
+            </div>
+            <div class="field field--full">
+              <label for="member-collab">协同号</label>
+              <el-input id="member-collab" v-model="newContact.collab_no" size="large" placeholder="请输入协同号" />
+            </div>
+          </div>
+        </div>
+        <template #footer>
+          <div class="section-actions">
+            <el-button @click="addContactDialogVisible = false">取消</el-button>
+            <el-button type="primary" :loading="addingContact" @click="addContact">添加成员</el-button>
+          </div>
+        </template>
+      </el-dialog>
 
       <el-dialog v-model="editContactDialogVisible" title="编辑成员" width="520px" destroy-on-close>
         <div class="form-grid member-grid">
@@ -359,11 +361,14 @@ const notifications = ref([
 const dispatchConfig = ref(createDefaultDispatchConfig())
 const contacts = ref([])
 const newContact = ref({ name: '', email: '', collab_no: '' })
+const addContactDialogVisible = ref(false)
 const editContactDialogVisible = ref(false)
 const editingContact = ref({ id: '', name: '', email: '', collab_no: '' })
 
 const profileInitial = computed(() => (profile.value.name || 'S').trim().charAt(0).toUpperCase())
 const roleLabel = computed(() => (profile.value.role === 'admin' ? '管理员' : '成员'))
+const contactsWithEmailCount = computed(() => contacts.value.filter((item) => String(item.email || "").trim()).length)
+const contactsWithCollabCount = computed(() => contacts.value.filter((item) => String(item.collab_no || "").trim()).length)
 const navItems = computed(() => {
   const items = [
     { value: 'account', label: '个人资料', note: '名称、邮箱与协同号' },
@@ -597,6 +602,8 @@ async function saveLlmConfig() {
     ElMessage.warning('请填写配置名称、模型名称和接口地址')
     return
   }
+
+
   savingLlm.value = true
   try {
     const payload = {
@@ -654,12 +661,18 @@ async function addContact() {
     await api.post('/contacts', newContact.value)
     ElMessage.success('成员已添加，默认密码为 123456')
     newContact.value = { name: '', email: '', collab_no: '' }
+    addContactDialogVisible.value = false
     await loadContacts()
   } catch (error) {
     ElMessage.error('添加失败：' + (error.response?.data?.detail || error.message))
   } finally {
     addingContact.value = false
   }
+}
+
+function openAddContactDialog() {
+  newContact.value = { name: '', email: '', collab_no: '' }
+  addContactDialogVisible.value = true
 }
 
 function openEditContact(contact) {
@@ -1054,17 +1067,151 @@ onMounted(async () => {
   padding: 18px;
 }
 
+.members-shell {
+  display: grid;
+  gap: 18px;
+  min-height: 0;
+}
+
+.members-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(280px, .9fr);
+  gap: 18px;
+  align-items: stretch;
+  padding: 22px;
+  border: 1px solid color-mix(in oklab, var(--primary) 14%, var(--border-soft));
+  border-radius: 24px;
+  background:
+    radial-gradient(circle at top left, color-mix(in oklab, var(--primary) 14%, transparent), transparent 42%),
+    linear-gradient(135deg, color-mix(in oklab, var(--bg-panel) 90%, var(--bg) 10%), color-mix(in oklab, var(--bg-elevated) 88%, var(--primary) 12%));
+}
+
+.members-hero__copy h3 {
+  margin: 8px 0 10px;
+  font-size: clamp(22px, 2.2vw, 30px);
+  line-height: 1.1;
+  letter-spacing: -.04em;
+  color: var(--text);
+}
+
+.members-hero__copy p:last-child {
+  margin: 0;
+  max-width: 58ch;
+  color: var(--text-muted);
+  line-height: 1.7;
+}
+
+.members-hero__eyebrow {
+  margin: 0;
+  font-size: 12px;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-weight: 700;
+}
+
+.members-hero__stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.members-stat {
+  padding: 16px 14px;
+  border-radius: 18px;
+  border: 1px solid color-mix(in oklab, var(--border-soft) 88%, transparent);
+  background: color-mix(in oklab, var(--bg-panel) 78%, var(--bg) 22%);
+}
+
+.members-stat span {
+  display: block;
+  color: var(--text-muted);
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+
+.members-stat strong {
+  color: var(--text);
+  font-size: clamp(24px, 2vw, 32px);
+  line-height: 1;
+  letter-spacing: -.05em;
+}
+
+.members-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 2px;
+}
+
+.members-toolbar__hint {
+  min-width: 0;
+}
+
+.members-toolbar__label {
+  display: block;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.members-toolbar__sub {
+  display: block;
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.members-table-shell {
+  min-height: 0;
+  max-height: min(58vh, 620px);
+  border: 1px solid var(--border-soft);
+  border-radius: 22px;
+  background: color-mix(in oklab, var(--bg-panel) 86%, var(--bg) 14%);
+  overflow: hidden;
+}
+
 .member-grid {
   margin-bottom: 18px;
 }
 
 .contacts-table {
-  margin-top: 18px;
+  height: 100%;
+}
+
+.member-dialog {
+  display: grid;
+  gap: 18px;
+}
+
+.member-dialog__intro {
+  padding: 16px 18px;
+  border-radius: 18px;
+  border: 1px solid color-mix(in oklab, var(--primary) 14%, var(--border-soft));
+  background: color-mix(in oklab, var(--primary) 8%, var(--bg-panel));
+}
+
+.member-dialog__intro h3 {
+  margin: 0 0 6px;
+  color: var(--text);
+  font-size: 18px;
+}
+
+.member-dialog__intro p {
+  margin: 0;
+  color: var(--text-muted);
+  line-height: 1.6;
 }
 
 @media (max-width: 1080px) {
   .settings-shell,
   .llm-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .members-hero {
     grid-template-columns: 1fr;
   }
 }
@@ -1082,6 +1229,15 @@ onMounted(async () => {
 
   .switch-card {
     align-items: flex-start;
+  }
+
+  .members-hero__stats {
+    grid-template-columns: 1fr;
+  }
+
+  .members-toolbar {
+    flex-direction: column;
+    align-items: stretch;
   }
 }
 </style>

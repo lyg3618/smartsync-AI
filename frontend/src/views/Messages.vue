@@ -5,7 +5,6 @@
         <div>
           <div class="messages-kicker">消息中心</div>
           <h1>消息中心</h1>
-          <p>集中查看会议处理、转写完成、分发同步等系统消息。</p>
         </div>
 
         <div class="messages-actions">
@@ -124,19 +123,19 @@ onMounted(loadNotifications)
 </script>
 
 <style scoped>
-.messages-page { padding: clamp(28px, 4vw, 44px); max-width: 1180px; margin: 0 auto; }
-.messages-header { display: flex; align-items: end; justify-content: space-between; gap: 20px; margin-bottom: 22px; }
+.messages-page { padding: clamp(20px, 3vw, 32px); max-width: 1180px; margin: 0 auto; min-height: 100vh; height: 100vh; display: flex; flex-direction: column; overflow: hidden; box-sizing: border-box; }
+.messages-header { display: flex; align-items: end; justify-content: space-between; gap: 20px; margin-bottom: 18px; flex-shrink: 0; }
 .messages-kicker { font-size: 12px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 10px; }
 .messages-header h1 { font-size: clamp(34px, 5vw, 52px); letter-spacing: -.05em; color: var(--text); margin-bottom: 10px; }
 .messages-header p { color: var(--text-muted); line-height: 1.7; }
 .messages-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.message-strip { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 20px; }
+.message-strip { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; flex-shrink: 0; }
 .strip-tile, .message-list-shell { border: 1px solid var(--border); background: color-mix(in oklab, var(--bg-card) 88%, var(--bg) 12%); border-radius: 24px; box-shadow: var(--shadow); }
 .strip-tile { padding: 18px 20px; }
 .strip-tile span { display: block; font-size: 12px; color: var(--text-muted); margin-bottom: 8px; }
 .strip-tile strong { font-size: 28px; color: var(--text); }
-.message-list-shell { padding: 18px; min-height: 360px; }
-.message-list { display: flex; flex-direction: column; gap: 12px; }
+.message-list-shell { padding: 18px; min-height: 0; flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+.message-list { display: flex; flex-direction: column; gap: 12px; min-height: 0; overflow: auto; padding-right: 4px; }
 .message-card { border: 1px solid var(--border); background: color-mix(in oklab, var(--bg) 84%, var(--bg-card) 16%); border-radius: 20px; padding: 18px; }
 .message-card--unread { border-color: color-mix(in oklab, var(--primary) 36%, var(--border)); background: color-mix(in oklab, var(--primary) 6%, var(--bg-card)); }
 .message-card__top, .message-card__actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
@@ -145,6 +144,6 @@ onMounted(loadNotifications)
 .message-time { color: var(--text-muted); font-size: 12px; }
 .message-card h2 { font-size: 18px; color: var(--text); margin-bottom: 10px; }
 .message-card p { color: var(--text); line-height: 1.7; margin-bottom: 14px; }
-.empty-state, .loading-state { min-height: 280px; display: grid; place-items: center; color: var(--text-muted); }
+.empty-state, .loading-state { min-height: 0; flex: 1; display: grid; place-items: center; color: var(--text-muted); }
 @media (max-width: 860px) { .messages-header, .message-strip { grid-template-columns: 1fr; display: grid; } .messages-actions { justify-content: flex-start; } }
 </style>
