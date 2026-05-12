@@ -366,6 +366,93 @@ class ConfirmPayload(BaseModel):
     action_items: Optional[List[dict]] = None
 
 
+class UpdateTranscriptSpeakerPayload(BaseModel):
+    speaker: str
+
+
+class BulkUpdateTranscriptSpeakersPayload(BaseModel):
+    mappings: dict[str, str]
+
+
+@router.put("/{meeting_id}/transcripts/{transcript_id}/speaker")
+async def update_transcript_speaker(
+    meeting_id: str,
+    transcript_id: int,
+    payload: UpdateTranscriptSpeakerPayload,
+    current_user: dict = Depends(get_current_user),
+):
+    speaker = str(payload.speaker or "").strip()
+    if not speaker:
+        raise HTTPException(400, "Speaker name is required")
+    if len(speaker) > 64:
+        raise HTTPException(400, "Speaker name is too long")
+
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "SELECT id FROM meetings WHERE id=%s AND user_id=%s AND is_deleted=0",
+                (meeting_id, current_user["sub"]),
+            )
+            meeting_row = await cur.fetchone()
+            if not meeting_row:
+                raise HTTPException(404, "Meeting not found")
+
+            await cur.execute(
+                "SELECT id FROM transcripts WHERE id=%s AND meeting_id=%s LIMIT 1",
+                (transcript_id, meeting_id),
+            )
+            transcript_row = await cur.fetchone()
+            if not transcript_row:
+                raise HTTPException(404, "Transcript not found")
+
+            await cur.execute(
+                "UPDATE transcripts SET speaker=%s WHERE id=%s AND meeting_id=%s",
+                (speaker, transcript_id, meeting_id),
+            )
+    return {"ok": True, "speaker": speaker}
+
+
+@router.put("/{meeting_id}/transcripts/speakers")
+async def bulk_update_transcript_speakers(
+    meeting_id: str,
+    payload: BulkUpdateTranscriptSpeakersPayload,
+    current_user: dict = Depends(get_current_user),
+):
+    raw_mappings = payload.mappings or {}
+    mappings = {
+        str(source or "").strip(): str(target or "").strip()
+        for source, target in raw_mappings.items()
+        if str(source or "").strip() and str(target or "").strip()
+    }
+    if not mappings:
+        raise HTTPException(400, "At least one speaker mapping is required")
+    if any(len(target) > 64 for target in mappings.values()):
+        raise HTTPException(400, "Speaker name is too long")
+
+    pool = await get_pool()
+    updated = 0
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "SELECT id FROM meetings WHERE id=%s AND user_id=%s AND is_deleted=0",
+                (meeting_id, current_user["sub"]),
+            )
+            meeting_row = await cur.fetchone()
+            if not meeting_row:
+                raise HTTPException(404, "Meeting not found")
+
+            for source, target in mappings.items():
+                if source == target:
+                    continue
+                await cur.execute(
+                    "UPDATE transcripts SET speaker=%s WHERE meeting_id=%s AND speaker=%s",
+                    (target, meeting_id, source),
+                )
+                updated += cur.rowcount or 0
+    return {"ok": True, "updated": updated}
+
+
 @router.post("/{meeting_id}/confirm")
 async def confirm_meeting(meeting_id: str, payload: ConfirmPayload, current_user: dict = Depends(get_current_user)):
     pool = await get_pool()

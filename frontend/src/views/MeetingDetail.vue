@@ -42,7 +42,12 @@
           </div>
 
           <div class="pane-card transcript-card">
-            <div class="pane-title"><el-icon><Document /></el-icon>逐字稿</div>
+            <div class="pane-title-row">
+              <div class="pane-title"><el-icon><Document /></el-icon>逐字稿</div>
+              <div v-if="!isReadOnly" class="inline-actions">
+                <el-button plain @click="openSpeakerDialog">修改发言人姓名</el-button>
+              </div>
+            </div>
             <div class="transcript-list">
               <div
                 v-for="seg in meeting.transcript || []"
@@ -320,9 +325,35 @@
         </section>
       </div>
     </div>
+
+    <el-dialog
+      v-model="speakerDialogVisible"
+      title="修改发言人姓名"
+      width="520px"
+      destroy-on-close
+    >
+      <div class="speaker-dialog-list">
+        <div
+          v-for="item in speakerMappings"
+          :key="item.original"
+          class="speaker-dialog-row"
+        >
+          <div class="speaker-dialog-source">{{ item.original }}</div>
+          <el-input
+            v-model="item.target"
+            maxlength="64"
+            placeholder="请输入发言人名称"
+            @keyup.enter="submitSpeakerChange"
+          />
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="speakerDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="speakerSaving" @click="submitSpeakerChange">保存</el-button>
+      </template>
+    </el-dialog>
   </MainLayout>
 </template>
-
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -358,6 +389,9 @@ const selectedTemplateId = ref(null)
 const templateContent = ref('')
 const templateMinutes = ref('')
 const loadingTemplates = ref(false)
+const speakerDialogVisible = ref(false)
+const speakerSaving = ref(false)
+const speakerMappings = ref([])
 
 const meeting = computed(() => store.currentMeeting)
 const isReadOnly = computed(() => {
@@ -442,6 +476,49 @@ function transcriptSpeaker(seg) {
 function transcriptText(seg) {
   const text = String(seg?.text || '')
   return text.replace(/^\[(SPEAKER_[^\]]+)\]\s*/i, '')
+}
+
+function openSpeakerDialog() {
+  const seen = new Set()
+  speakerMappings.value = (meeting.value?.transcript || [])
+    .map((seg) => transcriptSpeaker(seg))
+    .filter((speaker) => {
+      if (seen.has(speaker)) return false
+      seen.add(speaker)
+      return true
+    })
+    .map((speaker) => ({
+      original: speaker,
+      target: speaker,
+    }))
+  speakerDialogVisible.value = true
+}
+
+async function submitSpeakerChange() {
+  const mappings = Object.fromEntries(
+    speakerMappings.value
+      .map((item) => [String(item.original || "").trim(), String(item.target || "").trim()])
+      .filter(([source, target]) => source && target && source !== target)
+  )
+  if (!Object.keys(mappings).length) {
+    speakerDialogVisible.value = false
+    return
+  }
+
+  speakerSaving.value = true
+  try {
+    await api.put(`/meetings/${route.params.id}/transcripts/speakers`, { mappings })
+    for (const seg of meeting.value?.transcript || []) {
+      const currentSpeaker = transcriptSpeaker(seg)
+      if (mappings[currentSpeaker]) seg.speaker = mappings[currentSpeaker]
+    }
+    speakerDialogVisible.value = false
+    ElMessage.success('发言人已批量更新')
+  } catch (error) {
+    ElMessage.error('更新失败：' + (error.response?.data?.detail || error.message))
+  } finally {
+    speakerSaving.value = false
+  }
 }
 
 function syncEditableState() {
@@ -884,6 +961,9 @@ onMounted(async () => {
 .seg-time { display: inline-flex; align-items: center; justify-content: center; min-height: 24px; padding: 0 8px; border-radius: 999px; background: color-mix(in oklab, var(--bg-card) 92%, var(--bg) 8%); color: var(--text-muted); margin-bottom: 0; line-height: 1; font-size: 11px; font-weight: 700; letter-spacing: .02em; }
 .seg-speaker { display: inline-flex; align-items: center; justify-content: center; min-height: 24px; padding: 0 10px; border-radius: 999px; background: color-mix(in oklab, var(--primary) 14%, var(--bg-card)); color: color-mix(in oklab, var(--primary) 72%, var(--text)); font-size: 11px; font-weight: 700; letter-spacing: .02em; }
 .seg-text { color: var(--text); line-height: 1.5; font-size: 13px; white-space: pre-wrap; word-break: break-word; }
+.speaker-dialog-list { display: flex; flex-direction: column; gap: 12px; }
+.speaker-dialog-row { display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: 12px; align-items: center; }
+.speaker-dialog-source { display: inline-flex; align-items: center; min-height: 38px; padding: 0 12px; border-radius: 12px; background: color-mix(in oklab, var(--primary) 10%, var(--bg-card)); color: color-mix(in oklab, var(--primary) 68%, var(--text)); font-size: 12px; font-weight: 700; }
 .tabs-row { display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; flex-shrink: 0; }
 .tab-btn { min-height: 42px; padding: 0 16px; border-radius: 999px; border: 1px solid var(--border); background: transparent; color: var(--text-muted); cursor: pointer; display: inline-flex; align-items: center; gap: 10px; transition: border-color .18s ease, background .18s ease, color .18s ease, transform .18s ease; }
 .tab-btn:hover { transform: translateY(-1px); border-color: color-mix(in oklab, var(--primary) 18%, var(--border)); }
@@ -935,13 +1015,13 @@ onMounted(async () => {
 .tab-index { width: 24px; height: 24px; display: grid; place-items: center; border-radius: 8px; background: color-mix(in oklab, var(--primary) 10%, transparent); color: var(--text); font-size: 12px; font-weight: 800; flex-shrink: 0; }
 .action-stack-tab__body { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 .tab-text {
-  font-size: 12px; 
-  line-height: 1.5; 
-  display: -webkit-box; 
-  -webkit-line-clamp: 2; 
+  font-size: 12px;
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
   line-clamp: 2;
-  -webkit-box-orient: vertical; 
-  overflow: hidden; 
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 .tab-meta { font-size: 11px; color: var(--text-soft); display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .action-stage { position: relative; padding-bottom: 28px; min-height: 0; overflow: auto; }
@@ -1003,5 +1083,6 @@ onMounted(async () => {
   .action-topline { flex-direction: column; }
   .action-edit-row { grid-template-columns: 1fr; gap: 8px; }
   .decision-row { grid-template-columns: 1fr; }
+  .speaker-dialog-row { grid-template-columns: 1fr; gap: 8px; }
 }
 </style>
