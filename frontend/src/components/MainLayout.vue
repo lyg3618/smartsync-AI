@@ -437,9 +437,11 @@ onMounted(() => {
 }
 
 .main-content {
+  height: 100vh;
   min-height: 100vh;
   margin-left: var(--sidebar-width);
   transition: margin-left 0.22s ease;
+  overflow: hidden;
 }
 
 .layout--collapsed .main-content {
@@ -447,7 +449,9 @@ onMounted(() => {
 }
 
 .content-shell {
+  height: 100%;
   min-height: 100vh;
+  overflow: auto;
 }
 
 .sidebar--collapsed .brand-copy,

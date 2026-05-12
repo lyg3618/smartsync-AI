@@ -5,7 +5,6 @@
         <div class="header-copy">
           <div class="page-eyebrow">任务跟踪</div>
           <h1 class="page-title">我的待办</h1>
-          <p class="page-sub">按风险和状态集中处理自己负责的事项，进入详情后可继续补充进度说明。</p>
         </div>
 
         <div class="filter-tabs">
@@ -58,7 +57,7 @@
       <section v-if="focusTodo" class="focus-panel">
         <div class="focus-panel__main">
           <div class="focus-kicker">当前优先处理</div>
-          <h2>{{ focusTodo.content }}</h2>
+          <h1>{{ focusTodo.content }}</h1>
           <div class="focus-meta">
             <span class="status-badge" :class="displayStatus(focusTodo)">{{ statusText(focusTodo) }}</span>
             <span class="focus-meta__item">{{ focusTodo.meeting_name }}</span>
@@ -98,41 +97,19 @@
       </div>
 
       <div v-else class="todo-workbench">
-        <aside class="todo-rail">
-          <div class="rail-card">
-            <div class="rail-card__label">已完成</div>
-            <div class="rail-card__value">{{ doneCount }}/{{ todos.length }}</div>
-            <div class="rail-progress">
-              <span class="rail-progress__fill" :style="{ width: `${completionRatio}%` }"></span>
-            </div>
-          </div>
-
-          <div class="rail-card">
-            <div class="rail-card__label">当前筛选</div>
-            <div class="rail-card__value">{{ currentFilterLabel }}</div>
-            <p class="rail-card__note">列表会按风险、截止时间和状态自动整理。</p>
-          </div>
-
-          <div class="rail-card">
-            <div class="rail-card__label">处理建议</div>
-            <ul class="rail-tips">
-              <li>先处理逾期和今日截止的任务。</li>
-              <li>进入详情后可继续查看所属会议上下文。</li>
-              <li>备注里优先写进展和风险，不要重复任务标题。</li>
-            </ul>
-          </div>
-        </aside>
-
         <div class="todo-lanes">
           <section v-for="group in visibleGroups" :key="group.key" class="todo-lane" :class="`todo-lane--${group.key}`">
-            <header class="todo-lane__header">
-              <div>
-                <div class="todo-lane__kicker">{{ group.kicker }}</div>
-                <h2>{{ group.title }}</h2>
-                <p>{{ group.hint }}</p>
-              </div>
-              <div class="todo-lane__count">{{ group.items.length }}</div>
-            </header>
+<!--            <header class="todo-lane__header">-->
+<!--              <div class="todo-lane__intro">-->
+<!--                <div class="todo-lane__kicker">{{ group.kicker }}</div>-->
+<!--                <h2>{{ group.title }}</h2>-->
+<!--                <p>{{ group.hint }}</p>-->
+<!--              </div>-->
+<!--              <div class="todo-lane__summary">-->
+<!--                <div class="todo-lane__count">{{ group.items.length }}</div>-->
+<!--                <div class="todo-lane__summary-label">项任务</div>-->
+<!--              </div>-->
+<!--            </header>-->
 
             <div class="todo-list">
               <article
@@ -326,6 +303,11 @@ function laneMeta(key) {
       title: '已完成任务',
       hint: '这里保留已完成事项，方便回看对应会议和历史备注。',
     },
+    all: {
+      kicker: '全部视图',
+      title: '全部任务',
+      hint: '按优先级、截止时间和处理状态综合排序，便于连续处理。',
+    },
   }[key]
 }
 
@@ -367,6 +349,35 @@ const focusHint = computed(() => {
 })
 
 const visibleGroups = computed(() => {
+  if (currentFilter.value === 'all') {
+    if (!todos.value.length) return []
+    const items = [...todos.value].sort((left, right) => {
+      const scoreDiff = priorityScore(left) - priorityScore(right)
+      if (scoreDiff !== 0) return scoreDiff
+
+      const leftDue = normalizeDate(left.due_date)
+      const rightDue = normalizeDate(right.due_date)
+      if (leftDue && rightDue) {
+        const timeDiff = leftDue.getTime() - rightDue.getTime()
+        if (timeDiff !== 0) return timeDiff
+      } else if (leftDue && !rightDue) {
+        return -1
+      } else if (!leftDue && rightDue) {
+        return 1
+      }
+
+      const completedDiff = Number(Boolean(right.completed_at)) - Number(Boolean(left.completed_at))
+      if (completedDiff !== 0) return completedDiff
+
+      return String(left.id).localeCompare(String(right.id))
+    })
+    return [{
+      key: 'all',
+      items,
+      ...laneMeta('all'),
+    }]
+  }
+
   if (currentFilter.value !== 'all') {
     const items = filtered.value
     if (!items.length) return []
@@ -377,39 +388,7 @@ const visibleGroups = computed(() => {
     }]
   }
 
-  const groups = [
-    {
-      key: 'overdue',
-      items: todos.value.filter((item) => isOverdue(item)),
-    },
-    {
-      key: 'today',
-      items: todos.value.filter((item) => !isOverdue(item) && item.status !== 'done' && isToday(item.due_date)),
-    },
-    {
-      key: 'in_progress',
-      items: todos.value.filter((item) => item.status === 'in_progress' && !isOverdue(item) && !isToday(item.due_date)),
-    },
-    {
-      key: 'pending',
-      items: todos.value.filter((item) => displayStatus(item) === 'pending' && !isOverdue(item) && !isToday(item.due_date)),
-    },
-    {
-      key: 'viewed',
-      items: todos.value.filter((item) => displayStatus(item) === 'viewed' && !isOverdue(item) && !isToday(item.due_date)),
-    },
-    {
-      key: 'done',
-      items: todos.value.filter((item) => displayStatus(item) === 'done'),
-    },
-  ]
-
-  return groups
-    .filter((group) => group.items.length)
-    .map((group) => ({
-      ...group,
-      ...laneMeta(group.key),
-    }))
+  return []
 })
 
 function priorityScore(item) {
@@ -538,7 +517,7 @@ onMounted(loadTodos)
 </script>
 
 <style scoped>
-.todos-page { padding: clamp(28px, 4vw, 44px); max-width: 1320px; margin: 0 auto; }
+.todos-page { padding: clamp(20px, 3vw, 32px); max-width: 1320px; margin: 0 auto; min-height: 100vh; height: 100vh; display: flex; flex-direction: column; overflow: hidden; box-sizing: border-box; }
 .page-header { display: flex; align-items: end; justify-content: space-between; margin-bottom: 24px; flex-wrap: wrap; gap: 18px; padding-bottom: 18px; border-bottom: 1px solid var(--border); }
 .header-copy { max-width: 760px; }
 .page-eyebrow { margin-bottom: 10px; font-size: 12px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--text-muted); }
@@ -550,7 +529,7 @@ onMounted(loadTodos)
 .filter-tab.active { background: color-mix(in oklab, var(--primary) 10%, transparent); border-color: color-mix(in oklab, var(--primary) 28%, var(--border)); color: var(--text); }
 .tab-count { min-width: 22px; height: 22px; border-radius: 999px; padding: 0 7px; display: inline-flex; align-items: center; justify-content: center; background: color-mix(in oklab, var(--primary) 16%, transparent); color: var(--text); font-size: 11px; }
 .stats-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-bottom: 18px; }
-.stat-card { position: relative; display: flex; align-items: stretch; gap: 14px; min-height: 118px; padding: 18px; border-radius: 22px; border: 1px solid var(--border); background: color-mix(in oklab, var(--bg-card) 86%, var(--bg) 14%); overflow: hidden; }
+.stat-card { position: relative; display: flex; align-items: stretch; gap: 14px; min-height: 108px; padding: 18px; border-radius: 22px; border: 1px solid var(--border); background: color-mix(in oklab, var(--bg-card) 86%, var(--bg) 14%); overflow: hidden; }
 .stat-card.overdue { border-color: color-mix(in oklab, var(--danger) 28%, var(--border)); background: color-mix(in oklab, var(--danger) 8%, var(--bg-card)); }
 .stat-card.today { border-color: color-mix(in oklab, var(--warning) 28%, var(--border)); background: color-mix(in oklab, var(--warning) 8%, var(--bg-card)); }
 .stat-card.active { border-color: color-mix(in oklab, var(--accent) 28%, var(--border)); background: color-mix(in oklab, var(--accent) 8%, var(--bg-card)); }
@@ -571,31 +550,29 @@ onMounted(loadTodos)
 .focus-note { margin-top: 12px; color: var(--text-muted); line-height: 1.7; max-width: 56ch; }
 .focus-panel__actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
 .alert-strip { display: flex; align-items: center; gap: 8px; padding: 12px 16px; margin-bottom: 18px; border-radius: 16px; border: 1px solid color-mix(in oklab, var(--danger) 30%, var(--border)); background: color-mix(in oklab, var(--danger) 10%, var(--bg-card)); color: var(--danger); }
-.loading-wrap { padding: 40px 0; }
-.empty-wrap { text-align: center; padding: 90px 40px; color: var(--text-muted); border: 1px dashed var(--border); border-radius: 28px; }
+.loading-wrap,
+.empty-wrap { min-height: 0; flex: 1; display: grid; place-items: center; }
+.empty-wrap { text-align: center; padding: 40px; color: var(--text-muted); border: 1px dashed var(--border); border-radius: 28px; }
 .empty-icon { color: var(--success); margin-bottom: 12px; }
-.todo-workbench { display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: 18px; align-items: start; }
-.todo-rail { display: grid; gap: 12px; position: sticky; top: 22px; }
-.rail-card { border: 1px solid var(--border); border-radius: 20px; padding: 16px; background: color-mix(in oklab, var(--bg-card) 88%, var(--bg) 12%); box-shadow: var(--shadow); }
-.rail-card__label { font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text-soft); }
-.rail-card__value { margin-top: 8px; font-size: 1.45rem; font-weight: 800; color: var(--text); letter-spacing: -.04em; }
-.rail-card__note { margin-top: 8px; color: var(--text-muted); font-size: 13px; line-height: 1.6; }
-.rail-progress { margin-top: 12px; height: 8px; border-radius: 999px; background: color-mix(in oklab, var(--primary) 8%, var(--bg)); overflow: hidden; }
-.rail-progress__fill { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, color-mix(in oklab, var(--primary) 76%, var(--accent) 24%), color-mix(in oklab, var(--success) 70%, var(--primary) 30%)); transition: width .28s ease; }
-.rail-tips { margin-top: 10px; padding-left: 18px; color: var(--text-muted); line-height: 1.65; display: grid; gap: 8px; }
-.todo-lanes { display: grid; gap: 18px; }
-.todo-lane { border: 1px solid var(--border); border-radius: 24px; padding: 18px; background: color-mix(in oklab, var(--bg-card) 88%, var(--bg) 12%); box-shadow: var(--shadow); }
+.todo-workbench { border: 1px solid color-mix(in oklab, var(--primary) 12%, var(--border)); border-radius: 28px; background: radial-gradient(circle at top right, color-mix(in oklab, var(--primary) 8%, transparent), transparent 34%), linear-gradient(180deg, color-mix(in oklab, var(--bg-card) 94%, var(--bg) 6%) 0%, color-mix(in oklab, var(--bg-card) 88%, var(--bg) 12%) 100%); box-shadow: 0 24px 48px color-mix(in oklab, #081223 8%, transparent), var(--shadow); display: flex; flex: 1; min-height: 0; overflow: hidden; padding: 18px; }
+.todo-lanes { display: grid; gap: 18px; min-height: 0; flex: 1; overflow: hidden; width: 100%; }
+.todo-lane { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .todo-lane--overdue { border-color: color-mix(in oklab, var(--danger) 26%, var(--border)); }
 .todo-lane--today { border-color: color-mix(in oklab, var(--warning) 26%, var(--border)); }
 .todo-lane--in_progress { border-color: color-mix(in oklab, var(--accent) 24%, var(--border)); }
-.todo-lane__header { display: flex; align-items: end; justify-content: space-between; gap: 18px; padding-bottom: 16px; margin-bottom: 16px; border-bottom: 1px solid var(--border); }
+.todo-lane__header { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding-bottom: 18px; margin-bottom: 18px; border-bottom: 1px solid color-mix(in oklab, var(--primary) 10%, var(--border)); }
+.todo-lane__intro { min-width: 0; }
 .todo-lane__kicker { font-size: 12px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--text-soft); margin-bottom: 8px; }
 .todo-lane__header h2 { font-size: clamp(20px, 2.2vw, 28px); line-height: 1.08; letter-spacing: -.04em; color: var(--text); }
 .todo-lane__header p { margin-top: 8px; color: var(--text-muted); line-height: 1.6; max-width: 40rem; }
-.todo-lane__count { min-width: 46px; height: 46px; border-radius: 14px; display: grid; place-items: center; background: color-mix(in oklab, var(--primary) 8%, transparent); color: var(--text); font-weight: 800; font-size: 1.05rem; }
-.todo-list { display: flex; flex-direction: column; gap: 12px; }
-.todo-card { background: color-mix(in oklab, var(--bg) 78%, var(--bg-card) 22%); border: 1px solid var(--border); border-radius: 22px; padding: 20px 22px; display: flex; align-items: flex-start; gap: 16px; transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease; }
-.todo-card:hover { transform: translateY(-1px); border-color: color-mix(in oklab, var(--primary) 24%, var(--border)); box-shadow: var(--shadow); }
+.todo-lane__summary { min-width: 88px; padding: 10px 12px; border-radius: 18px; background: color-mix(in oklab, var(--primary) 8%, transparent); display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.todo-lane__count { line-height: 1; color: var(--text); font-weight: 800; font-size: 1.2rem; }
+.todo-lane__summary-label { margin-top: 4px; font-size: 11px; color: var(--text-soft); }
+.todo-list { display: flex; flex-direction: column; gap: 14px; flex: 1; min-height: 0; overflow: auto; padding-right: 8px; }
+.todo-list::-webkit-scrollbar { width: 8px; }
+.todo-list::-webkit-scrollbar-thumb { background: color-mix(in oklab, var(--primary) 18%, var(--border)); border-radius: 999px; }
+.todo-card { background: linear-gradient(180deg, color-mix(in oklab, var(--bg) 84%, var(--bg-card) 16%) 0%, color-mix(in oklab, var(--bg) 74%, var(--bg-card) 26%) 100%); border: 1px solid color-mix(in oklab, var(--primary) 10%, var(--border)); border-radius: 24px; padding: 20px 22px; display: flex; align-items: flex-start; gap: 16px; transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease, background .18s ease; }
+.todo-card:hover { transform: translateY(-2px); border-color: color-mix(in oklab, var(--primary) 28%, var(--border)); box-shadow: 0 18px 36px color-mix(in oklab, var(--primary) 10%, transparent); background: linear-gradient(180deg, color-mix(in oklab, var(--bg) 90%, var(--bg-card) 10%) 0%, color-mix(in oklab, var(--bg) 78%, var(--bg-card) 22%) 100%); }
 .todo-card.overdue { border-color: color-mix(in oklab, var(--danger) 34%, var(--border)); box-shadow: 0 12px 24px color-mix(in oklab, var(--danger) 12%, transparent); }
 .todo-status-dot { width: 12px; height: 12px; border-radius: 999px; margin-top: 8px; flex-shrink: 0; background: var(--text-muted); }
 .todo-status-dot.pending { background: var(--warning); }
@@ -615,8 +592,8 @@ onMounted(loadTodos)
 .flag-badge.overdue { color: var(--danger); background: color-mix(in oklab, var(--danger) 10%, transparent); border-color: color-mix(in oklab, var(--danger) 20%, var(--border)); }
 .flag-badge.today { color: var(--warning); background: color-mix(in oklab, var(--warning) 10%, transparent); }
 .flag-badge.note { color: var(--text); background: color-mix(in oklab, var(--primary) 8%, transparent); }
-.todo-meta { display: flex; gap: 16px; flex-wrap: wrap; }
-.meta-item { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text-muted); }
+.todo-meta { display: flex; gap: 10px; flex-wrap: wrap; }
+.meta-item { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text-muted); min-height: 30px; padding: 0 10px; border-radius: 999px; background: color-mix(in oklab, var(--bg-card) 82%, var(--bg) 18%); border: 1px solid color-mix(in oklab, var(--primary) 8%, var(--border)); }
 .meta-item.urgent, .focus-meta__item.urgent { color: var(--warning); }
 .meta-item.overdue, .focus-meta__item.overdue { color: var(--danger); }
 .note-preview { margin-top: 14px; padding: 14px 16px; border-radius: 16px; background: color-mix(in oklab, var(--primary) 6%, var(--bg-card)); border: 1px solid color-mix(in oklab, var(--primary) 16%, var(--border)); }
@@ -629,22 +606,26 @@ onMounted(loadTodos)
 .note-dialog-value { color: var(--text-muted); line-height: 1.7; }
 @media (prefers-reduced-motion: reduce) {
   .filter-tab,
-  .rail-progress__fill,
   .todo-card { transition: none; }
 }
 @media (max-width: 1100px) {
-  .todo-workbench { grid-template-columns: 1fr; }
-  .todo-rail { position: static; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .todos-page { height: auto; min-height: 100vh; overflow: visible; }
+  .todo-workbench { overflow: visible; padding: 16px; }
+  .todo-lanes { height: auto; overflow: visible; max-height: none; }
+  .todo-lane,
+  .todo-list { min-height: unset; }
+  .todo-lane { overflow: visible; }
+  .todo-list { overflow: visible; padding-right: 0; }
 }
 @media (max-width: 920px) {
-  .stats-grid,
-  .todo-rail { grid-template-columns: 1fr; }
+  .stats-grid { grid-template-columns: 1fr; }
   .focus-panel { grid-template-columns: 1fr; }
   .focus-panel__actions { justify-content: flex-start; }
 }
 @media (max-width: 760px) {
   .todo-lane__header,
   .todo-card { grid-template-columns: 1fr; display: grid; }
+  .todo-lane__summary { width: 100%; }
   .todo-actions { width: 100%; justify-content: flex-start; }
   .todo-top { flex-direction: column; }
 }
