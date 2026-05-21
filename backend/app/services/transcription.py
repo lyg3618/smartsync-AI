@@ -18,7 +18,11 @@ async def run_transcription(
     on_status: StatusCallback = None,
 ) -> list[TranscriptSegment]:
     if settings.asr_provider == "tingwu":
-        return await run_tingwu_transcription(audio_url=audio_source, file_name=file_name, on_status=on_status)
+        return await run_tingwu_transcription(
+            audio_source=audio_source,
+            source_kind=source_kind,
+            file_name=file_name,
+            on_status=on_status,
+        )
 
     return await run_local_transcription(audio_source=audio_source, source_kind=source_kind, on_status=on_status)
-

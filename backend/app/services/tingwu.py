@@ -10,9 +10,14 @@ import hashlib
 import hmac
 import json
 import logging
+import mimetypes
 import re
+import secrets
+import string
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Awaitable, Callable, Optional
+from urllib.parse import quote
 from uuid import uuid4
 
 import httpx
@@ -24,6 +29,7 @@ logger = logging.getLogger("uvicorn.error")
 
 TINGWU_HOST = "tingwu.cn-beijing.aliyuncs.com"
 TINGWU_ENDPOINT = f"https://{TINGWU_HOST}"
+_UPLOAD_ID_ALPHABET = string.ascii_lowercase + string.digits
 
 
 class TingwuError(RuntimeError):
@@ -155,6 +161,70 @@ def _get_credentials():
     sk_fp = hashlib.sha256(sk.encode()).hexdigest()[:12]
     logger.info("[TINGWU_AUTH] ak=%s sk_fp=%s endpoint=%s", ak_hint, sk_fp, TINGWU_HOST)
     return ak, sk, app_key
+
+
+def _generate_upload_id(length: int = 11) -> str:
+    return "".join(secrets.choice(_UPLOAD_ID_ALPHABET) for _ in range(length))
+
+
+def _build_gradio_file_url(uploaded_path: str) -> str:
+    path = (uploaded_path or "").strip()
+    if not path:
+        raise TingwuError("Gradio upload returned an empty file path.")
+    if path.startswith(("http://", "https://")):
+        return path
+    prefix = (settings.tingwu_gradio_file_prefix or "").strip()
+    if not prefix:
+        base_url = (settings.tingwu_gradio_base_url or "https://qwen-qwen3-asr.ms.show").rstrip("/")
+        prefix = f"{base_url}/gradio_api/file="
+    normalized_path = path if path.startswith("/") else f"/{path}"
+    encoded_path = quote(normalized_path, safe="/%")
+    return f"{prefix}{encoded_path}"
+
+
+def _upload_local_file_to_gradio_sync(local_path: str) -> str:
+    path = Path(local_path)
+    if not path.is_file():
+        raise TingwuError(f"Audio file does not exist: {local_path}")
+
+    base_url = (settings.tingwu_gradio_base_url or "https://qwen-qwen3-asr.ms.show").rstrip("/")
+    upload_id = _generate_upload_id()
+    upload_url = f"{base_url}/gradio_api/upload?upload_id={upload_id}"
+    content_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+    headers = {
+        "accept": "*/*",
+        "origin": base_url,
+        "referer": f"{base_url}/",
+        "user-agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36"
+        ),
+        "x-studio-token": (settings.tingwu_gradio_x_studio_token or "").strip(),
+    }
+
+    with path.open("rb") as file_obj:
+        files = {"files": (path.name, file_obj, content_type)}
+        with httpx.Client(timeout=120, follow_redirects=True) as client:
+            resp = client.post(upload_url, headers=headers, files=files)
+
+    logger.info("[TINGWU_UPLOAD] status=%s body=%s", resp.status_code, resp.text[:500])
+    try:
+        data = resp.json()
+    except Exception as exc:
+        raise TingwuError(f"Cannot parse Gradio upload response: {resp.text[:400]}") from exc
+
+    if resp.status_code >= 400:
+        raise TingwuError(f"Gradio upload HTTP {resp.status_code}: {data}")
+    if not isinstance(data, list) or not data or not isinstance(data[0], str):
+        raise TingwuError(f"Unexpected Gradio upload response: {data}")
+
+    return _build_gradio_file_url(data[0])
+
+
+def _prepare_tingwu_audio_url_sync(audio_source: str, source_kind: str) -> str:
+    if source_kind == "url" or str(audio_source).startswith(("http://", "https://")):
+        return audio_source
+    return _upload_local_file_to_gradio_sync(audio_source)
 
 
 def _submit_task_sync(audio_url: str, file_name: str) -> str:
@@ -373,11 +443,13 @@ def _extract_result_urls(payload: Any) -> list[str]:
 # ---------------------------------------------------------------------------
 
 async def run_tingwu_transcription(
-    audio_url: str,
+    audio_source: str,
+    source_kind: str,
     file_name: str,
     on_status: Optional[Callable[[str], Awaitable[None] | None]] = None,
 ) -> list[TranscriptSegment]:
-    logger.info("[TINGWU] submit start file_name=%s audio_url=%.120s", file_name, audio_url)
+    audio_url = await asyncio.to_thread(_prepare_tingwu_audio_url_sync, audio_source, source_kind)
+    logger.info("[TINGWU] submit start file_name=%s audio_url=%s", file_name, audio_url)
     task_id = await asyncio.to_thread(_submit_task_sync, audio_url, file_name)
     logger.info("[TINGWU] submit ok task_id=%s", task_id)
 

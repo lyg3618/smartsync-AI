@@ -46,8 +46,7 @@ async def _persist_transcription_result(
 ) -> None:
     today = date.today().strftime("%Y-%m-%d")
     duration_sec = int(max((seg.end_ms for seg in segments), default=0) / 1000)
-    provider_name = "FunASR CAM++ + Faiss" if settings.asr_provider == "local" else "Alibaba Cloud Tingwu"
-    summary = f"Transcription completed by {provider_name}."
+    summary = "转写已完成，请点击 AI 分析生成会议摘要。"
 
     pool = await get_pool()
     async with pool.acquire() as conn:
