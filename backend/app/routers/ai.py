@@ -154,22 +154,84 @@ def _format_duration(sec: int) -> str:
     return f"{minute} 分钟"
 
 
-async def _chat_completion(user_id: str, prompt: str, *, temperature: float = 0.2) -> str:
+def _preview_text(value: str, limit: int = 1000) -> str:
+    text = (value or "").strip()
+    if not text:
+        return "空内容"
+    if len(text) <= limit:
+        return text
+    return text[:limit] + f"...（已截断，原始长度 {len(text)} 字符）"
+
+
+def _json_error_context(value: str, error: json.JSONDecodeError, radius: int = 120) -> str:
+    start = max(error.pos - radius, 0)
+    end = min(error.pos + radius, len(value))
+    snippet = value[start:end]
+    pointer = " " * max(error.pos - start, 0) + "^"
+    return f"位置 {error.pos} 附近内容：\n{snippet}\n{pointer}"
+
+
+def _extract_first_json_object(value: str) -> str:
+    text = (value or "").strip()
+    if not text:
+        return text
+
+    start = text.find("{")
+    if start < 0:
+        return text
+
+    depth = 0
+    in_string = False
+    escaped = False
+    for index in range(start, len(text)):
+        char = text[index]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+
+        if char == '"':
+            in_string = True
+        elif char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start : index + 1]
+
+    return text
+
+
+async def _chat_completion(
+    user_id: str,
+    prompt: str,
+    *,
+    temperature: float = 0.2,
+    response_format: dict[str, str] | None = None,
+) -> str:
     llm_config = await _fetch_active_llm_config(user_id)
     headers = {"Content-Type": "application/json"}
     if llm_config["api_key"]:
         headers["Authorization"] = f"Bearer {llm_config['api_key']}"
 
     url = f"{llm_config['base_url'].rstrip('/')}/chat/completions"
+    request_payload: dict[str, Any] = {
+        "model": llm_config["model"],
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": temperature,
+    }
+    if response_format:
+        request_payload["response_format"] = response_format
+
     try:
         async with httpx.AsyncClient(timeout=120) as client:
             response = await client.post(
                 url,
-                json={
-                    "model": llm_config["model"],
-                    "messages": [{"role": "user", "content": prompt}],
-                    "temperature": temperature,
-                },
+                json=request_payload,
                 headers=headers,
             )
     except httpx.RequestError as exc:
@@ -248,14 +310,26 @@ async def analyze_meeting(payload: AnalyzeMeetingPayload, current_user: dict = D
         "你是一名会议分析助手，请从逐字稿中提取会议摘要、核心决议和可执行行动项。\n"
         "输出必须是严格 JSON，不要添加代码块。字段格式如下："
         '{"summary":"会议摘要（100字以内）","decisions":["决议1","决议2"],"action_items":[{"owner_name":"负责人姓名","content":"具体可执行任务","due_date":"YYYY-MM-DD","priority":"high/medium/low"}]}'
-        "如果负责人或日期不确定，可填写“待确认”和空字符串。\n\n"
+        "如果负责人或日期不确定，可填写“待确认”和空字符串。\n"
+        "禁止输出思考过程、分析步骤、说明文字、Markdown 标记或代码块，响应必须以 { 开始并以 } 结束。\n\n"
         f"会议名称：{meeting['name']}\n会议日期：{meeting['date']}\n\n逐字稿：\n{transcript_text}"
     )
-    content = await _chat_completion(current_user["sub"], prompt, temperature=0.1)
+    content = await _chat_completion(
+        current_user["sub"],
+        prompt,
+        temperature=0.1,
+        response_format={"type": "json_object"},
+    )
+    normalized_content = _extract_first_json_object(content)
     try:
-        data = json.loads(content)
+        data = json.loads(normalized_content)
     except json.JSONDecodeError as exc:
-        raise HTTPException(502, f"模型返回内容不是有效 JSON：{exc}") from exc
+        detail = (
+            f"模型返回内容不是有效 JSON：{exc.msg}；line={exc.lineno}, column={exc.colno}, pos={exc.pos}\n"
+            f"{_json_error_context(normalized_content, exc)}\n"
+            f"模型原始返回预览：\n{_preview_text(content)}"
+        )
+        raise HTTPException(502, detail) from exc
 
     return data
 
