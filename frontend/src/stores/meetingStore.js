@@ -80,6 +80,11 @@ export const useMeetingStore = defineStore('meeting', {
       return res.data
     },
 
+    async updateMeeting(id, payload) {
+      const res = await api.patch(`/meetings/${id}`, payload)
+      return res.data
+    },
+
     async dispatchMeeting(id) {
       const res = await api.post(`/meetings/${id}/dispatch`)
       return res.data

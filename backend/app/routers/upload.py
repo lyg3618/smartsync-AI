@@ -2,8 +2,8 @@ import os
 import uuid
 import logging
 from pathlib import Path
-from urllib.parse import quote
-from datetime import date
+from urllib.parse import quote, unquote, urlparse
+from datetime import date, datetime
 from typing import Optional
 
 import aiofiles
@@ -14,6 +14,7 @@ from app.database import get_pool
 from app.routers.auth import get_current_user
 from app.services.local_asr import LocalTranscriptionError
 from app.services.notifications import create_notification
+from app.services.tingwu import TingwuError
 from app.services.transcription import run_transcription
 from app.services.transcription_types import TranscriptSegment
 
@@ -25,6 +26,14 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 def _build_public_upload_url(file_path: Path) -> str:
     return f"/uploads/{quote(file_path.name)}"
+
+
+def _build_default_meeting_name(source_name: str | None, uploaded_at: datetime) -> str:
+    raw_name = str(source_name or "").strip()
+    if raw_name.startswith(("http://", "https://")):
+        raw_name = unquote(Path(urlparse(raw_name).path).name)
+    stem = Path(raw_name).stem.strip() or "online-audio"
+    return f"{stem} {uploaded_at.strftime('%Y-%m-%d %H:%M')}"
 
 
 async def _update_task(task_id: str, status: str, progress: int) -> None:
@@ -91,6 +100,8 @@ async def _process_transcription(
         async def _on_status(task_status: str) -> None:
             progress_map = {
                 "PREPARING": 25,
+                "UPLOADING": 25,
+                "SUBMITTING": 30,
                 "TRANSCRIBING": 45,
                 "EMBEDDING": 65,
                 "CLUSTERING": 75,
@@ -141,6 +152,17 @@ async def _process_transcription(
             related_type="meeting",
             related_id=meeting_id,
         )
+    except TingwuError as exc:
+        logger.exception("[TRANSCRIPTION_JOB] tingwu_error task_id=%s", task_id)
+        await _update_task(task_id, "failed", 100)
+        await create_notification(
+            user_id=user_id,
+            title="Meeting transcription failed",
+            content=f"{meeting_name} Tingwu transcription failed: {exc}",
+            category="warning",
+            related_type="meeting",
+            related_id=meeting_id,
+        )
     except Exception as exc:
         logger.exception("[TRANSCRIPTION_JOB] unexpected_error task_id=%s", task_id)
         await _update_task(task_id, "failed", 100)
@@ -178,17 +200,18 @@ async def upload_file(
     source_kind = "file"
     meeting_name = (name or "").strip()
     audio_url = ""
+    uploaded_at = datetime.now()
 
     if file:
-        meeting_name = meeting_name or file.filename or "local-audio"
+        meeting_name = meeting_name or _build_default_meeting_name(file.filename, uploaded_at)
         save_path = UPLOAD_DIR / f"{task_id}_{file.filename}"
         async with aiofiles.open(save_path, "wb") as f_out:
             await f_out.write(await file.read())
         audio_source = str(save_path)
         audio_url = _build_public_upload_url(save_path)
     else:
-        meeting_name = meeting_name or "online-audio"
         audio_source = (url or "").strip()
+        meeting_name = meeting_name or _build_default_meeting_name(audio_source, uploaded_at)
         audio_url = audio_source
         source_kind = "url"
 

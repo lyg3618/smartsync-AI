@@ -164,7 +164,7 @@
 
           <div v-else-if="store.meetings.length" class="meeting-table__body">
             <article
-              v-for="(meeting, index) in store.meetings"
+              v-for="(meeting, index) in paginatedMeetings"
               :key="meeting.id"
               class="meeting-row fade-slide-up"
               :style="{ animationDelay: index * 40 + 'ms' }"
@@ -189,6 +189,7 @@
               </div>
               <div class="meeting-row__actions">
                 <el-button size="small" type="primary" @click.stop="router.push(`/meetings/${meeting.id}`)">进入</el-button>
+                <el-button size="small" text @click.stop="renameMeeting(meeting)">重命名</el-button>
                 <el-button size="small" text type="danger" @click.stop="removeMeeting(meeting)">删除</el-button>
               </div>
             </article>
@@ -198,6 +199,15 @@
             <h3>还没有会议记录</h3>
             <p>先上传一段录音，系统会自动生成转写、纪要和行动项。</p>
           </div>
+        </div>
+
+        <div v-if="!store.loading && store.meetings.length > meetingPageSize" class="meeting-pagination">
+          <el-pagination
+            v-model:current-page="meetingPage"
+            :page-size="meetingPageSize"
+            :total="store.meetings.length"
+            layout="total, prev, pager, next"
+          />
         </div>
       </section>
 
@@ -214,7 +224,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox, ElNotification } from 'element-plus'
 import api from '../services/api.js'
@@ -237,6 +247,13 @@ const dispatched = computed(() => store.meetings.filter((meeting) => meeting.sta
 const pendingReview = computed(() => store.meetings.filter((meeting) => meeting.status === 'ready_for_review').length)
 const processingCount = computed(() => store.meetings.filter((meeting) => meeting.status === 'processing' || meeting.status === 'uploading').length)
 const latestMeeting = computed(() => store.meetings[0] || null)
+const meetingPageSize = 5
+const meetingPage = ref(1)
+const meetingTotalPages = computed(() => Math.max(1, Math.ceil(store.meetings.length / meetingPageSize)))
+const paginatedMeetings = computed(() => {
+  const start = (meetingPage.value - 1) * meetingPageSize
+  return store.meetings.slice(start, start + meetingPageSize)
+})
 const workdayPulse = computed(() => {
   const hour = new Date().getHours()
   if (hour < 11) return '早上好，先看今天的新会议'
@@ -246,6 +263,19 @@ const workdayPulse = computed(() => {
 })
 
 onMounted(() => store.fetchMeetings())
+
+watch(
+  () => store.meetings.length,
+  () => {
+    if (store.meetings.length === 0) {
+      meetingPage.value = 1
+      return
+    }
+    if (meetingPage.value > meetingTotalPages.value) {
+      meetingPage.value = meetingTotalPages.value
+    }
+  },
+)
 
 function statusLabel(status) {
   return {
@@ -326,7 +356,6 @@ async function processFile(file) {
   try {
     const formData = new FormData()
     formData.append('file', file)
-    formData.append('name', file.name.replace(/\.[^.]+$/, ''))
 
     const res = await api.post('/upload', formData)
     await pollTask(res.data.task_id)
@@ -417,6 +446,23 @@ async function handleUrlUpload() {
   } finally {
     isProcessing.value = false
     meetingUrl.value = ''
+  }
+}
+
+async function renameMeeting(meeting) {
+  try {
+    const { value } = await ElMessageBox.prompt('请输入新的会议名称', '重命名会议', {
+      inputValue: meeting.name || '',
+      inputValidator: (inputValue) => !!inputValue?.trim() || '会议名称不能为空',
+      confirmButtonText: '保存',
+      cancelButtonText: '取消',
+    })
+    await store.updateMeeting(meeting.id, { name: value.trim() })
+    ElMessage.success('会议名称已更新')
+    await store.fetchMeetings()
+  } catch (error) {
+    if (error === 'cancel' || error === 'close') return
+    ElMessage.error('重命名失败：' + (error.response?.data?.detail || error.message))
   }
 }
 
@@ -785,9 +831,10 @@ async function removeMeeting(meeting) {
 .meeting-table__head,
 .meeting-row {
   display: grid;
-  grid-template-columns: minmax(320px, 2fr) 116px 100px 100px 120px 114px;
+  grid-template-columns: minmax(300px, 2fr) 116px 100px 100px 120px 224px;
   gap: 12px;
   align-items: center;
+  min-width: 1080px;
 }
 
 .meeting-table__head {
@@ -798,6 +845,16 @@ async function removeMeeting(meeting) {
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+.meeting-table__head > span {
+  justify-self: center;
+  text-align: center;
+}
+
+.meeting-table__head > span:first-child {
+  justify-self: start;
+  text-align: left;
 }
 
 .meeting-table__body {
@@ -828,6 +885,7 @@ async function removeMeeting(meeting) {
   align-items: center;
   gap: 14px;
   min-width: 0;
+  justify-self: start;
 }
 
 .meeting-row__icon {
@@ -873,14 +931,29 @@ async function removeMeeting(meeting) {
   line-height: 1.5;
 }
 
+.meeting-row__cell {
+  justify-self: center;
+  text-align: center;
+}
+
 .meeting-row__hint {
   margin-top: 4px;
 }
 
 .meeting-row__actions {
   display: flex;
-  justify-content: flex-end;
-  gap: 8px;
+  justify-self: center;
+  justify-content: center;
+  flex-wrap: nowrap;
+  gap: 6px;
+}
+
+.meeting-row__actions :deep(.el-button + .el-button) {
+  margin-left: 0;
+}
+
+.meeting-table {
+  overflow-x: auto;
 }
 
 .meeting-table__loading {
@@ -894,6 +967,12 @@ async function removeMeeting(meeting) {
 
 .table-empty p {
   margin-inline: auto;
+}
+
+.meeting-pagination {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 18px;
 }
 
 .url-hint {
@@ -922,7 +1001,8 @@ async function removeMeeting(meeting) {
 
   .meeting-table__head,
   .meeting-row {
-    grid-template-columns: minmax(240px, 2fr) 88px 88px 84px 100px 98px;
+    grid-template-columns: minmax(220px, 1.6fr) 88px 88px 84px 100px 212px;
+    min-width: 852px;
   }
 }
 
@@ -939,12 +1019,20 @@ async function removeMeeting(meeting) {
 
   .meeting-row {
     grid-template-columns: 1fr;
+    min-width: 0;
     gap: 8px;
     padding: 18px 0;
   }
 
   .meeting-row__actions {
-    justify-content: flex-start;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  .meeting-pagination {
+    justify-content: center;
+    overflow-x: auto;
+    padding-top: 14px;
   }
 }
 </style>

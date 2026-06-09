@@ -9,7 +9,15 @@
 
         <div class="topbar-main">
           <div class="topbar-eyebrow">会议详情</div>
-          <h1>{{ meeting?.name || '会议详情' }}</h1>
+          <el-input
+            v-if="meeting && !isReadOnly"
+            v-model="editedName"
+            class="meeting-name-input"
+            maxlength="255"
+            placeholder="请输入会议名称"
+            @keyup.enter="saveMeeting"
+          />
+          <h1 v-else>{{ meeting?.name || '会议详情' }}</h1>
           <div v-if="meeting" class="topbar-meta">
             <span>{{ meeting.date || '--' }}</span>
             <span>{{ formatDuration(meeting.duration_sec) }}</span>
@@ -298,6 +306,7 @@
               <div class="inline-actions">
                 <el-button plain :loading="loadingTemplates" @click="loadTemplates">刷新模板</el-button>
                 <el-button v-if="!isReadOnly" type="primary" plain :loading="generatingTemplateMinutes" @click="generateTemplateMinutes">生成纪要</el-button>
+                <el-button v-if="!isReadOnly" :disabled="!templateMinutes.trim()" :loading="savingTemplateMinutes" @click="saveTemplateMinutes">保存纪要</el-button>
                 <el-button :disabled="!templateMinutes" @click="downloadTemplateMinutes">下载</el-button>
               </div>
             </div>
@@ -376,6 +385,7 @@ const store = useMeetingStore()
 
 const activeTab = ref('summary')
 const activeActionIndex = ref(0)
+const editedName = ref('')
 const editedSummary = ref('')
 const editedDecisions = ref([])
 const editedActions = ref([])
@@ -386,9 +396,11 @@ const regenAndSaveLoading = ref(false)
 const generatingTemplateMinutes = ref(false)
 const templates = ref([])
 const selectedTemplateId = ref(null)
-const templateContent = ref('')
+const defaultTemplateContent = '一、会议主题\n待补充\n\n二、参会人\n待补充\n\n三、会议结论\n待补充'
+const templateContent = ref(defaultTemplateContent)
 const templateMinutes = ref('')
 const loadingTemplates = ref(false)
+const savingTemplateMinutes = ref(false)
 const speakerDialogVisible = ref(false)
 const speakerSaving = ref(false)
 const speakerMappings = ref([])
@@ -522,11 +534,13 @@ async function submitSpeakerChange() {
 }
 
 function syncEditableState() {
+  editedName.value = meeting.value?.name || ''
   editedSummary.value = meeting.value?.summary || ''
   editedDecisions.value = Array.isArray(meeting.value?.decisions) ? [...meeting.value.decisions] : []
   editedActions.value = Array.isArray(meeting.value?.action_items)
     ? meeting.value.action_items.map((item) => ({ ...item, progress_note: item.progress_note || '' }))
     : []
+  templateMinutes.value = meeting.value?.template_minutes || ''
   syncActiveActionIndex()
 }
 
@@ -685,18 +699,26 @@ function describeActionDue(action) {
 
 async function saveMeeting() {
   if (isReadOnly.value) return
+  if (!editedName.value.trim()) {
+    ElMessage.warning('请输入会议名称')
+    return false
+  }
   saving.value = true
   try {
     await store.confirmMeeting(route.params.id, {
+      name: editedName.value.trim(),
       summary: editedSummary.value,
       decisions: editedDecisions.value.filter(Boolean),
       action_items: editedActions.value,
+      template_minutes: templateMinutes.value,
     })
     await store.fetchMeeting(route.params.id)
     syncEditableState()
     ElMessage.success('会议已保存')
+    return true
   } catch (error) {
     ElMessage.error('保存失败：' + (error.response?.data?.detail || error.message))
+    return false
   } finally {
     saving.value = false
   }
@@ -745,7 +767,8 @@ async function regenWithLLM(autoSave = false) {
 async function handleDispatch() {
   if (isReadOnly.value) return
   try {
-    await saveMeeting()
+    const saved = await saveMeeting()
+    if (!saved) return
     dispatching.value = true
     if (meeting.value?.status === 'dispatched') {
       const res = await api.post(`/meetings/${route.params.id}/resync`)
@@ -786,7 +809,13 @@ async function loadTemplates() {
 
 function handleTemplateChange(id) {
   const template = templates.value.find((item) => item.id === id)
-  templateContent.value = template?.content || ''
+  templateContent.value = template?.content || defaultTemplateContent
+}
+
+function resolveTemplateContent() {
+  if (templateContent.value.trim()) return templateContent.value
+  templateContent.value = defaultTemplateContent
+  return defaultTemplateContent
 }
 
 async function createTemplate() {
@@ -798,7 +827,7 @@ async function createTemplate() {
     })
     const res = await api.post('/templates', {
       name: value.trim(),
-      content: templateContent.value || '模板内容',
+      content: resolveTemplateContent(),
       is_default: false,
     })
     selectedTemplateId.value = res.data.id
@@ -817,7 +846,7 @@ async function saveTemplate() {
     return
   }
   try {
-    await api.put(`/templates/${selectedTemplateId.value}`, { content: templateContent.value })
+    await api.put(`/templates/${selectedTemplateId.value}`, { content: resolveTemplateContent() })
     await loadTemplates()
     ElMessage.success('模板已保存')
   } catch (error) {
@@ -834,7 +863,7 @@ async function saveAsTemplate() {
     })
     const res = await api.post('/templates', {
       name: value.trim(),
-      content: templateContent.value || '模板内容',
+      content: resolveTemplateContent(),
       is_default: false,
     })
     selectedTemplateId.value = res.data.id
@@ -852,7 +881,7 @@ async function deleteCurrentTemplate() {
     await ElMessageBox.confirm('确认删除当前模板吗？', '删除确认', { type: 'warning' })
     await api.delete(`/templates/${selectedTemplateId.value}`)
     selectedTemplateId.value = null
-    templateContent.value = ''
+    templateContent.value = defaultTemplateContent
     await loadTemplates()
     ElMessage.success('模板已删除')
   } catch (error) {
@@ -863,15 +892,12 @@ async function deleteCurrentTemplate() {
 
 async function generateTemplateMinutes() {
   if (isReadOnly.value) return
-  if (!templateContent.value.trim()) {
-    ElMessage.warning('请先输入模板内容')
-    return
-  }
+  const template = resolveTemplateContent()
   generatingTemplateMinutes.value = true
   try {
     const res = await api.post('/ai/template-minutes', {
       meeting_id: route.params.id,
-      template_content: templateContent.value,
+      template_content: template,
     })
     templateMinutes.value = res.data.content || ''
     ElMessage.success('纪要生成成功')
@@ -879,6 +905,25 @@ async function generateTemplateMinutes() {
     ElMessage.error('生成失败：' + (error.response?.data?.detail || error.message))
   } finally {
     generatingTemplateMinutes.value = false
+  }
+}
+
+async function saveTemplateMinutes() {
+  if (isReadOnly.value) return
+  if (!templateMinutes.value.trim()) {
+    ElMessage.warning('请先生成或输入会议纪要')
+    return
+  }
+  savingTemplateMinutes.value = true
+  try {
+    await store.updateMeeting(route.params.id, { template_minutes: templateMinutes.value })
+    await store.fetchMeeting(route.params.id)
+    syncEditableState()
+    ElMessage.success('会议纪要已保存')
+  } catch (error) {
+    ElMessage.error('保存纪要失败：' + (error.response?.data?.detail || error.message))
+  } finally {
+    savingTemplateMinutes.value = false
   }
 }
 
@@ -935,6 +980,9 @@ onMounted(async () => {
 .topbar { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 18px; align-items: center; margin-bottom: 16px; flex-shrink: 0; }
 .topbar-main h1 { font-size: clamp(30px, 4vw, 48px); line-height: 1; letter-spacing: -.05em; color: var(--text); }
 .topbar-eyebrow { font-size: 12px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px; }
+.meeting-name-input { max-width: min(680px, 100%); }
+.meeting-name-input :deep(.el-input__wrapper) { min-height: 48px; padding-inline: 14px; border-radius: 14px; }
+.meeting-name-input :deep(.el-input__inner) { font-size: 28px; font-weight: 800; color: var(--text); letter-spacing: 0; }
 .topbar-meta { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; color: var(--text-muted); }
 .topbar-actions { display: flex; gap: 10px; flex-wrap: wrap; }
 .meeting-status, .readonly-chip { display: inline-flex; align-items: center; min-height: 28px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--border); }

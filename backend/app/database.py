@@ -24,10 +24,38 @@ async def ensure_runtime_tables():
     from app.services.notifications import ensure_notifications_table
 
     await ensure_notifications_table()
+    await ensure_meeting_columns()
     await ensure_action_item_tracking_columns()
     await ensure_transcript_columns()
     await ensure_contact_columns()
     await ensure_system_settings_table()
+
+
+async def ensure_meeting_columns():
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                """
+                SELECT COLUMN_NAME
+                FROM information_schema.COLUMNS
+                WHERE TABLE_SCHEMA=%s AND TABLE_NAME='meetings'
+                """,
+                (settings.mysql_db,)
+            )
+            existing_columns = {row[0] for row in await cur.fetchall()}
+
+            column_statements = {
+                "template_minutes": "ALTER TABLE meetings ADD COLUMN template_minutes LONGTEXT NULL",
+            }
+
+            for column_name, statement in column_statements.items():
+                if column_name in existing_columns:
+                    continue
+                try:
+                    await cur.execute(statement)
+                except Exception:
+                    pass
 
 
 async def ensure_action_item_tracking_columns():

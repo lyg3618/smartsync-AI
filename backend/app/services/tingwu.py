@@ -182,6 +182,35 @@ def _build_gradio_file_url(uploaded_path: str) -> str:
     return f"{prefix}{encoded_path}"
 
 
+def _build_configured_file_url(local_path: str) -> str:
+    base_url = (settings.tingwu_file_url_base or "").strip().rstrip("/")
+    if not base_url:
+        return ""
+
+    path = Path(local_path)
+    if not path.is_file():
+        raise TingwuError(f"Audio file does not exist: {local_path}")
+
+    return f"{base_url}/{quote(path.name, safe='')}"
+
+
+def _get_gradio_upload_timeout_sec() -> float:
+    timeout_sec = getattr(settings, "tingwu_gradio_upload_timeout_sec", 600) or 600
+    return max(float(timeout_sec), 1.0)
+
+
+def _build_gradio_upload_timeout() -> httpx.Timeout:
+    timeout_sec = _get_gradio_upload_timeout_sec()
+    connect_timeout = min(30.0, timeout_sec)
+    return httpx.Timeout(
+        timeout_sec,
+        connect=connect_timeout,
+        read=timeout_sec,
+        write=timeout_sec,
+        pool=connect_timeout,
+    )
+
+
 def _upload_local_file_to_gradio_sync(local_path: str) -> str:
     path = Path(local_path)
     if not path.is_file():
@@ -204,8 +233,18 @@ def _upload_local_file_to_gradio_sync(local_path: str) -> str:
 
     with path.open("rb") as file_obj:
         files = {"files": (path.name, file_obj, content_type)}
-        with httpx.Client(timeout=120, follow_redirects=True) as client:
-            resp = client.post(upload_url, headers=headers, files=files)
+        try:
+            with httpx.Client(timeout=_build_gradio_upload_timeout(), follow_redirects=True) as client:
+                resp = client.post(upload_url, headers=headers, files=files)
+        except httpx.TimeoutException as exc:
+            timeout_sec = _get_gradio_upload_timeout_sec()
+            raise TingwuError(
+                f"Gradio upload timed out after {timeout_sec:.0f}s. "
+                "Set TINGWU_FILE_URL_BASE to a public /uploads URL, "
+                "increase TINGWU_GRADIO_UPLOAD_TIMEOUT_SEC, or use ASR_PROVIDER=local."
+            ) from exc
+        except httpx.RequestError as exc:
+            raise TingwuError(f"Gradio upload failed: {exc}") from exc
 
     logger.info("[TINGWU_UPLOAD] status=%s body=%s", resp.status_code, resp.text[:500])
     try:
@@ -224,6 +263,18 @@ def _upload_local_file_to_gradio_sync(local_path: str) -> str:
 def _prepare_tingwu_audio_url_sync(audio_source: str, source_kind: str) -> str:
     if source_kind == "url" or str(audio_source).startswith(("http://", "https://")):
         return audio_source
+
+    provider = (getattr(settings, "tingwu_file_upload_provider", "auto") or "auto").strip().lower()
+    configured_url = _build_configured_file_url(audio_source)
+    if provider in {"auto", "public", "public_url", "file_url"} and configured_url:
+        logger.info("[TINGWU_AUDIO_URL] using TINGWU_FILE_URL_BASE for file=%s", Path(audio_source).name)
+        return configured_url
+    if provider in {"public", "public_url", "file_url"}:
+        raise TingwuError("TINGWU_FILE_URL_BASE is required when TINGWU_FILE_UPLOAD_PROVIDER=public_url.")
+    if provider not in {"auto", "gradio"}:
+        raise TingwuError(
+            "Unsupported TINGWU_FILE_UPLOAD_PROVIDER. Use auto, public_url, or gradio."
+        )
     return _upload_local_file_to_gradio_sync(audio_source)
 
 
@@ -448,8 +499,16 @@ async def run_tingwu_transcription(
     file_name: str,
     on_status: Optional[Callable[[str], Awaitable[None] | None]] = None,
 ) -> list[TranscriptSegment]:
+    if on_status:
+        maybe = on_status("UPLOADING")
+        if asyncio.iscoroutine(maybe):
+            await maybe
     audio_url = await asyncio.to_thread(_prepare_tingwu_audio_url_sync, audio_source, source_kind)
     logger.info("[TINGWU] submit start file_name=%s audio_url=%s", file_name, audio_url)
+    if on_status:
+        maybe = on_status("SUBMITTING")
+        if asyncio.iscoroutine(maybe):
+            await maybe
     task_id = await asyncio.to_thread(_submit_task_sync, audio_url, file_name)
     logger.info("[TINGWU] submit ok task_id=%s", task_id)
 

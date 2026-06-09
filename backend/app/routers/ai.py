@@ -1,4 +1,5 @@
 ﻿import json
+import re
 from typing import Any
 
 import httpx
@@ -10,6 +11,10 @@ from app.database import get_pool
 from app.routers.auth import get_current_user
 
 router = APIRouter()
+_THINK_BLOCK_RE = re.compile(r"<think\b[^>]*>.*?</think\s*>", re.IGNORECASE | re.DOTALL)
+_THINK_CLOSE_RE = re.compile(r"</think\s*>", re.IGNORECASE)
+_THINK_OPEN_RE = re.compile(r"^\s*<think\b[^>]*>", re.IGNORECASE)
+DEFAULT_TEMPLATE_CONTENT = "一、会议主题\n待补充\n\n二、参会人\n待补充\n\n三、会议结论\n待补充"
 
 
 class TemplateMinutesPayload(BaseModel):
@@ -206,6 +211,19 @@ def _extract_first_json_object(value: str) -> str:
     return text
 
 
+def _strip_think_tags(value: str) -> str:
+    text = (value or "").strip()
+    if not text:
+        return text
+
+    text = _THINK_BLOCK_RE.sub("", text).strip()
+    close_matches = list(_THINK_CLOSE_RE.finditer(text))
+    if close_matches:
+        text = text[close_matches[-1].end():].strip()
+    text = _THINK_OPEN_RE.sub("", text).strip()
+    return text
+
+
 async def _chat_completion(
     user_id: str,
     prompt: str,
@@ -256,7 +274,7 @@ async def _chat_completion(
             text_preview = text_preview[:300] + "..."
         raise HTTPException(502, f"模型返回了非 JSON 响应：{text_preview or '空响应体'}") from exc
 
-    content = payload.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+    content = _strip_think_tags(payload.get("choices", [{}])[0].get("message", {}).get("content", ""))
     if not content:
         raise HTTPException(502, "模型未返回有效内容")
     return content
@@ -264,8 +282,7 @@ async def _chat_completion(
 
 @router.post("/template-minutes")
 async def generate_template_minutes(payload: TemplateMinutesPayload, current_user: dict = Depends(get_current_user)):
-    if not payload.template_content.strip():
-        raise HTTPException(400, "模板内容不能为空")
+    template_content = payload.template_content.strip() or DEFAULT_TEMPLATE_CONTENT
 
     meeting = await _fetch_meeting_context(payload.meeting_id, current_user["sub"])
     transcript_text = "\n".join(item["text"] for item in meeting["transcript"]) or "暂无逐字稿"
@@ -290,7 +307,7 @@ async def generate_template_minutes(payload: TemplateMinutesPayload, current_use
         "2. 根据会议内容填充，不确定的信息写“待补充”。\n"
         "3. 不要解释过程，不要输出模板说明，只输出最终纪要正文。\n"
         "4. 输出语言为中文。\n\n"
-        f"【用户模板】\n{payload.template_content}\n\n"
+        f"【用户模板】\n{template_content}\n\n"
         f"【会议基础信息】\n会议名称：{meeting['name']}\n会议日期：{meeting['date']}\n会议时长：{_format_duration(meeting['duration_sec'])}\n\n"
         f"【会议摘要】\n{meeting['summary'] or '待补充'}\n\n"
         f"【核心决议】\n{decisions_text}\n\n"
@@ -320,7 +337,7 @@ async def analyze_meeting(payload: AnalyzeMeetingPayload, current_user: dict = D
         temperature=0.1,
         response_format={"type": "json_object"},
     )
-    normalized_content = _extract_first_json_object(content)
+    normalized_content = _extract_first_json_object(_strip_think_tags(content))
     try:
         data = json.loads(normalized_content)
     except json.JSONDecodeError as exc:

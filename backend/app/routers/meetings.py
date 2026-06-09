@@ -39,6 +39,15 @@ def _normalize_audio_url(value: str | None) -> str | None:
     return f"/uploads/{quote(file_name)}"
 
 
+def _normalize_meeting_name(value: str | None) -> str:
+    name = str(value or "").strip()
+    if not name:
+        raise HTTPException(400, "会议名称不能为空")
+    if len(name) > 255:
+        raise HTTPException(400, "会议名称不能超过 255 个字符")
+    return name
+
+
 def _parse_legacy_speaker(text: str) -> tuple[str, str]:
     value = str(text or "")
     if value.startswith("[") and "]" in value:
@@ -58,7 +67,7 @@ async def _fetch_meeting(cur, meeting_id: str, user_id: str):
 
     await cur.execute(
         """
-        SELECT id,name,date,duration_sec,task_count,status,audio_url,summary,decisions,
+        SELECT id,name,date,duration_sec,task_count,status,audio_url,summary,decisions,template_minutes,
                CASE WHEN user_id=%s THEN 1 ELSE 0 END AS can_edit
         FROM meetings
         WHERE id=%s AND is_deleted=0
@@ -92,7 +101,8 @@ async def _fetch_meeting(cur, meeting_id: str, user_id: str):
         "audio_url": _normalize_audio_url(row[6]),
         "summary": row[7],
         "decisions": json.loads(row[8]) if row[8] else [],
-        "can_edit": bool(row[9]),
+        "template_minutes": row[9] or "",
+        "can_edit": bool(row[10]),
     }
 
     await cur.execute(
@@ -361,9 +371,16 @@ async def get_meeting(meeting_id: str, current_user: dict = Depends(get_current_
 
 
 class ConfirmPayload(BaseModel):
+    name: Optional[str] = None
     summary: Optional[str] = None
     decisions: Optional[List[str]] = None
     action_items: Optional[List[dict]] = None
+    template_minutes: Optional[str] = None
+
+
+class UpdateMeetingPayload(BaseModel):
+    name: Optional[str] = None
+    template_minutes: Optional[str] = None
 
 
 class UpdateTranscriptSpeakerPayload(BaseModel):
@@ -467,10 +484,17 @@ async def confirm_meeting(meeting_id: str, payload: ConfirmPayload, current_user
                 raise HTTPException(404, "Meeting not found")
             meeting_status = meeting_row[1]
 
+            if payload.name is not None:
+                await cur.execute(
+                    "UPDATE meetings SET name=%s WHERE id=%s",
+                    (_normalize_meeting_name(payload.name), meeting_id),
+                )
             if payload.summary is not None:
                 await cur.execute("UPDATE meetings SET summary=%s WHERE id=%s", (payload.summary, meeting_id))
             if payload.decisions is not None:
                 await cur.execute("UPDATE meetings SET decisions=%s WHERE id=%s", (json.dumps(payload.decisions, ensure_ascii=False), meeting_id))
+            if payload.template_minutes is not None:
+                await cur.execute("UPDATE meetings SET template_minutes=%s WHERE id=%s", (payload.template_minutes, meeting_id))
             if payload.action_items is not None:
                 await cur.execute(
                     """
@@ -528,6 +552,32 @@ async def confirm_meeting(meeting_id: str, payload: ConfirmPayload, current_user
                 for existing_id in existing_map.keys():
                     if existing_id not in seen_ids:
                         await cur.execute("DELETE FROM action_items WHERE id=%s AND meeting_id=%s", (int(existing_id), meeting_id))
+    return {"ok": True}
+
+
+@router.patch("/{meeting_id}")
+async def update_meeting(meeting_id: str, payload: UpdateMeetingPayload, current_user: dict = Depends(get_current_user)):
+    updates = []
+    params = []
+    if payload.name is not None:
+        updates.append("name=%s")
+        params.append(_normalize_meeting_name(payload.name))
+    if payload.template_minutes is not None:
+        updates.append("template_minutes=%s")
+        params.append(payload.template_minutes)
+    if not updates:
+        raise HTTPException(400, "没有可更新的会议字段")
+
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                f"UPDATE meetings SET {', '.join(updates)} WHERE id=%s AND user_id=%s AND is_deleted=0",
+                tuple(params + [meeting_id, current_user["sub"]]),
+            )
+            if cur.rowcount == 0:
+                raise HTTPException(404, "Meeting not found")
+
     return {"ok": True}
 
 

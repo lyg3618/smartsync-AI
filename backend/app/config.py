@@ -54,9 +54,11 @@ class Settings(BaseSettings):
     # If you upload local files, this must be a public URL prefix that Tingwu can access.
     # Example: https://your-domain.com/uploads
     tingwu_file_url_base: str = ""
+    tingwu_file_upload_provider: str = "auto"
     tingwu_gradio_base_url: str = "https://qwen-qwen3-asr.ms.show"
     tingwu_gradio_file_prefix: str = "https://qwen-qwen3-asr.ms.show/gradio_api/file="
     tingwu_gradio_x_studio_token: str = ""
+    tingwu_gradio_upload_timeout_sec: int = 600
 
     # FunASR local transcription + CAM++ + Faiss
     funasr_asr_model: str = "damo/speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-pytorch"
