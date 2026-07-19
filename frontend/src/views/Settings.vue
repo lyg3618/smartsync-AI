@@ -23,10 +23,6 @@
             <em>角色</em>
             <strong>{{ roleLabel }}</strong>
           </span>
-          <span class="identity-stat">
-            <em>协同号</em>
-            <strong>{{ profile.collab_no || '未配置' }}</strong>
-          </span>
         </div>
       </section>
 
@@ -59,10 +55,6 @@
               <div class="field">
                 <label for="profile-email">邮箱</label>
                 <el-input id="profile-email" v-model="profile.email" size="large" placeholder="name@company.com" />
-              </div>
-              <div class="field field--full">
-                <label for="profile-collab">协同号</label>
-                <el-input id="profile-collab" v-model="profile.collab_no" size="large" placeholder="请输入协同号，例如 070626" />
               </div>
             </div>
 
@@ -117,44 +109,13 @@
                     <div class="switch-row__title">邮箱发送</div>
                     <div class="switch-row__sub">按负责人聚合行动项，发送任务邮件。</div>
                   </div>
-                  <el-switch v-model="dispatchConfig.email_enabled" />
+                  <el-switch v-model="dispatchConfig.email_enabled" disabled />
                 </div>
               </div>
-              <div class="field field--full">
-                <div class="switch-card">
-                  <div>
-                    <div class="switch-row__title">消息发送</div>
-                    <div class="switch-row__sub">调用协同消息接口，按负责人协同号推送消息。</div>
-                  </div>
-                  <el-switch v-model="dispatchConfig.message_enabled" />
-                </div>
-              </div>
-              <template v-if="dispatchConfig.message_enabled">
-                <div class="field field--full">
-                  <label for="dispatch-url">协同消息接口地址</label>
-                  <el-input id="dispatch-url" v-model="dispatchConfig.message_api_url" size="large" placeholder="http://tcmp.btsteel.com/services/ServiceMessageCustom" />
-                </div>
-                <div class="field">
-                  <label for="dispatch-code">消息来源编码</label>
-                  <el-input id="dispatch-code" v-model="dispatchConfig.message_code" size="large" placeholder="2906" />
-                </div>
-                <div class="field">
-                  <label for="dispatch-creator">默认创建人协同号</label>
-                  <el-input id="dispatch-creator" v-model="dispatchConfig.message_creator_collab_no" size="large" placeholder="留空则使用当前分发人的协同号" />
-                </div>
-                <div class="field field--full">
-                  <label for="dispatch-link">PC 端链接</label>
-                  <el-input id="dispatch-link" v-model="dispatchConfig.message_link_url" size="large" placeholder="可选" />
-                </div>
-                <div class="field field--full">
-                  <label for="dispatch-mobile-link">移动端链接</label>
-                  <el-input id="dispatch-mobile-link" v-model="dispatchConfig.message_mobile_link_url" size="large" placeholder="可选" />
-                </div>
-              </template>
             </div>
 
             <div class="section-actions">
-              <el-button type="primary" :loading="savingDispatch" @click="saveDispatchConfig">保存分发配置</el-button>
+              <el-button type="primary" :loading="savingDispatch" @click="saveDispatchConfig">保存邮件配置</el-button>
             </div>
           </section>
 
@@ -226,7 +187,7 @@
               <div class="members-hero">
                 <div class="members-hero__copy">
                   <p class="members-hero__eyebrow">成员名录</p>
-                  <h3>维护协同分发成员</h3>
+                  <h3>维护任务分发成员</h3>
                 </div>
                 <div class="members-hero__stats">
                   <div class="members-stat">
@@ -236,10 +197,6 @@
                   <div class="members-stat">
                     <span>已配置邮箱</span>
                     <strong>{{ contactsWithEmailCount }}</strong>
-                  </div>
-                  <div class="members-stat">
-                    <span>已配置协同号</span>
-                    <strong>{{ contactsWithCollabCount }}</strong>
                   </div>
                 </div>
               </div>
@@ -261,7 +218,6 @@
                 >
                   <el-table-column prop="name" label="姓名" min-width="140" />
                   <el-table-column prop="email" label="邮箱" min-width="220" />
-                  <el-table-column prop="collab_no" label="协同号" min-width="160" />
                   <el-table-column label="操作" width="180" fixed="right">
                     <template #default="{ row }">
                       <el-button text type="primary" @click="openEditContact(row)">编辑</el-button>
@@ -290,10 +246,6 @@
               <label for="member-email">邮箱</label>
               <el-input id="member-email" v-model="newContact.email" size="large" placeholder="可留空" />
             </div>
-            <div class="field field--full">
-              <label for="member-collab">协同号</label>
-              <el-input id="member-collab" v-model="newContact.collab_no" size="large" placeholder="请输入协同号" />
-            </div>
           </div>
         </div>
         <template #footer>
@@ -313,10 +265,6 @@
           <div class="field">
             <label for="edit-member-email">邮箱</label>
             <el-input id="edit-member-email" v-model="editingContact.email" size="large" placeholder="可留空" />
-          </div>
-          <div class="field field--full">
-            <label for="edit-member-collab">协同号</label>
-            <el-input id="edit-member-collab" v-model="editingContact.collab_no" size="large" placeholder="请输入协同号" />
           </div>
         </div>
         <template #footer>
@@ -348,7 +296,7 @@ const loadingContacts = ref(false)
 const addingContact = ref(false)
 const savingContactEdit = ref(false)
 
-const profile = ref({ id: '', username: '', name: '', role: '', email: '', collab_no: '' })
+const profile = ref({ id: '', username: '', name: '', role: '', email: '' })
 const pwdForm = ref({ old_password: '', new_password: '', confirm_password: '' })
 const llmConfigs = ref([])
 const editingLlmId = ref(null)
@@ -360,26 +308,25 @@ const notifications = ref([
 ])
 const dispatchConfig = ref(createDefaultDispatchConfig())
 const contacts = ref([])
-const newContact = ref({ name: '', email: '', collab_no: '' })
+const newContact = ref({ name: '', email: '' })
 const addContactDialogVisible = ref(false)
 const editContactDialogVisible = ref(false)
-const editingContact = ref({ id: '', name: '', email: '', collab_no: '' })
+const editingContact = ref({ id: '', name: '', email: '' })
 
 const profileInitial = computed(() => (profile.value.name || 'S').trim().charAt(0).toUpperCase())
 const roleLabel = computed(() => (profile.value.role === 'admin' ? '管理员' : '成员'))
 const contactsWithEmailCount = computed(() => contacts.value.filter((item) => String(item.email || "").trim()).length)
-const contactsWithCollabCount = computed(() => contacts.value.filter((item) => String(item.collab_no || "").trim()).length)
 const navItems = computed(() => {
   const items = [
-    { value: 'account', label: '个人资料', note: '名称、邮箱与协同号' },
+    { value: 'account', label: '个人资料', note: '名称与邮箱' },
     { value: 'security', label: '账户安全', note: '修改登录密码' },
     { value: 'notifications', label: '通知偏好', note: '控制个人提醒展示' },
   ]
   if (profile.value.role === 'admin') {
     items.push(
-      { value: 'dispatch', label: '协同分发', note: '邮箱和消息发送配置' },
+      { value: 'dispatch', label: '邮件分发', note: '任务邮件发送配置' },
       { value: 'llm', label: '模型连接', note: '接口与模型配置' },
-      { value: 'members', label: '成员管理', note: '维护邮箱与协同号' },
+      { value: 'members', label: '成员管理', note: '维护成员与邮箱' },
     )
   }
   return items
@@ -389,9 +336,9 @@ const activeTabHint = computed(() => {
     account: '当前正在维护个人资料',
     security: '密码修改后需要重新登录',
     notifications: '当前为本地浏览器设置',
-    dispatch: '分发配置会影响任务分发与变更同步',
+    dispatch: '邮件配置会影响任务分发与变更同步',
     llm: '先测试连接，再保存配置',
-    members: '成员邮箱和协同号都会参与分发',
+    members: '成员邮箱用于任务邮件分发',
   }[activeTab.value] || '设置会立即生效'
 })
 
@@ -400,15 +347,7 @@ function createEmptyLlmForm() {
 }
 
 function createDefaultDispatchConfig() {
-  return {
-    email_enabled: true,
-    message_enabled: false,
-    message_api_url: 'http://tcmp.btsteel.com/services/ServiceMessageCustom',
-    message_code: '2906',
-    message_creator_collab_no: '',
-    message_link_url: '',
-    message_mobile_link_url: '',
-  }
+  return { email_enabled: true }
 }
 
 function normalizeActiveTab() {
@@ -448,7 +387,6 @@ async function loadProfile() {
     name: res.data.name,
     role: res.data.role,
     email: res.data.email,
-    collab_no: res.data.collab_no,
   })
 }
 
@@ -462,7 +400,6 @@ async function saveProfile() {
     const res = await api.put('/settings/profile', {
       name: profile.value.name,
       email: profile.value.email,
-      collab_no: profile.value.collab_no,
     })
     profile.value = res.data
     syncLocalUser({
@@ -471,7 +408,6 @@ async function saveProfile() {
       name: res.data.name,
       role: res.data.role,
       email: res.data.email,
-      collab_no: res.data.collab_no,
     })
     ElMessage.success('个人资料已保存')
   } catch (error) {
@@ -526,15 +462,11 @@ async function loadDispatchConfig() {
 }
 
 async function saveDispatchConfig() {
-  if (!dispatchConfig.value.email_enabled && !dispatchConfig.value.message_enabled) {
-    ElMessage.warning('邮箱发送和消息发送至少启用一种')
-    return
-  }
   savingDispatch.value = true
   try {
     const res = await api.put('/settings/dispatch', dispatchConfig.value)
     dispatchConfig.value = { ...createDefaultDispatchConfig(), ...res.data }
-    ElMessage.success('分发配置已保存')
+    ElMessage.success('邮件分发配置已保存')
   } catch (error) {
     ElMessage.error('保存失败：' + (error.response?.data?.detail || error.message))
   } finally {
@@ -660,7 +592,7 @@ async function addContact() {
   try {
     await api.post('/contacts', newContact.value)
     ElMessage.success('成员已添加，默认密码为 123456')
-    newContact.value = { name: '', email: '', collab_no: '' }
+    newContact.value = { name: '', email: '' }
     addContactDialogVisible.value = false
     await loadContacts()
   } catch (error) {
@@ -671,7 +603,7 @@ async function addContact() {
 }
 
 function openAddContactDialog() {
-  newContact.value = { name: '', email: '', collab_no: '' }
+  newContact.value = { name: '', email: '' }
   addContactDialogVisible.value = true
 }
 
@@ -680,7 +612,6 @@ function openEditContact(contact) {
     id: contact.id,
     name: contact.name || '',
     email: contact.email || '',
-    collab_no: contact.collab_no || '',
   }
   editContactDialogVisible.value = true
 }
@@ -696,7 +627,6 @@ async function updateContact() {
     await api.put(`/contacts/${editingContact.value.id}`, {
       name: editingContact.value.name,
       email: editingContact.value.email,
-      collab_no: editingContact.value.collab_no,
     })
     ElMessage.success('成员信息已更新')
     editContactDialogVisible.value = false

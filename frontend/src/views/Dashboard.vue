@@ -21,8 +21,8 @@
         <div class="upload-panel">
           <div class="section-head">
             <div>
-              <div class="section-label">上传会议</div>
-              <h2>导入录音，开始处理</h2>
+              <div class="section-label">记录会议</div>
+              <h2>导入录音或实时记录</h2>
             </div>
             <div class="section-hint">处理时间通常为 3 到 10 分钟</div>
           </div>
@@ -54,14 +54,19 @@
               </div>
 
               <div class="upload-stage__actions">
-                <el-button type="primary" size="large" @click="fileInput?.click()">
+                <el-button type="primary" size="large" :disabled="isRealtimeActive" @click="fileInput?.click()">
                   <el-icon><FolderOpened /></el-icon>
                   选择文件
                 </el-button>
-                <el-button size="large" @click="showUrlDialog = true">
+                <el-button size="large" :disabled="isRealtimeActive" @click="showUrlDialog = true">
                   <el-icon><Link /></el-icon>
                   粘贴录音链接
                 </el-button>
+                <RealtimeRecorder
+                  :disabled="isProcessing"
+                  @active-change="isRealtimeActive = $event"
+                  @completed="handleRealtimeCompleted"
+                />
               </div>
             </template>
 
@@ -229,6 +234,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox, ElNotification } from 'element-plus'
 import api from '../services/api.js'
 import MainLayout from '../components/MainLayout.vue'
+import RealtimeRecorder from '../components/RealtimeRecorder.vue'
 import { useMeetingStore } from '../stores/meetingStore.js'
 
 const router = useRouter()
@@ -236,6 +242,7 @@ const store = useMeetingStore()
 const fileInput = ref(null)
 const isDragging = ref(false)
 const isProcessing = ref(false)
+const isRealtimeActive = ref(false)
 const uploadPct = ref(0)
 const progressLabel = ref('正在上传录音...')
 const progressNote = ref('上传完成后会自动开始转写，请稍等。')
@@ -327,8 +334,20 @@ function formatDuration(sec) {
 
 function handleDrop(event) {
   isDragging.value = false
+  if (isRealtimeActive.value) return
   const file = event.dataTransfer.files[0]
   if (file) processFile(file)
+}
+
+async function handleRealtimeCompleted(meetingId) {
+  await store.fetchMeetings()
+  ElNotification({
+    title: '实时记录已完成',
+    message: '逐字稿已经保存，可以进入会议详情继续整理纪要。',
+    type: 'success',
+    duration: 5000,
+    onClick: () => meetingId && router.push(`/meetings/${meetingId}`),
+  })
 }
 
 function handleFileSelect(event) {

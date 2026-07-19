@@ -1,4 +1,3 @@
-import asyncio
 import json
 import smtplib
 from datetime import datetime
@@ -6,7 +5,6 @@ from email.message import EmailMessage
 from pathlib import Path
 from typing import Any, List, Optional
 from urllib.parse import quote
-from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -15,13 +13,6 @@ from app.config import settings
 from app.database import get_pool
 from app.routers.auth import get_current_user
 from app.routers.settings import get_dispatch_config_from_db
-from app.services.collaboration import (
-    alter_collaboration_message_status,
-    build_message_body,
-    build_task_deadline_text,
-    refresh_collaboration_message_list,
-    send_collaboration_message,
-)
 from app.services.notifications import create_notification
 
 router = APIRouter()
@@ -188,118 +179,6 @@ async def _send_grouped_task_emails(
     return emails_sent
 
 
-def _build_message_title(meeting_name: str, subject_prefix: str) -> str:
-    return f"{meeting_name} - {subject_prefix}"
-
-
-def _build_collab_target_id(code: str, meeting_id: str, action_item_id: int, collab_no: str) -> str:
-    return f"{code}|{meeting_id}_{action_item_id}_{collab_no}_{uuid4().hex[:8]}"
-
-
-def _extract_collab_login_id(target_id: str, fallback: str = "") -> str:
-    value = str(target_id or "").strip()
-    if "|" in value:
-        value = value.split("|", 1)[1]
-    parts = [part.strip() for part in value.split("_") if part.strip()]
-    if len(parts) >= 4:
-        return parts[-2]
-    if parts:
-        return parts[-1]
-    return str(fallback or "").strip()
-
-
-async def _alter_existing_collaboration_messages(
-    rows: list[tuple[int, str, str]],
-    *,
-    config: dict[str, Any],
-    biz_state: str = "1",
-) -> None:
-    if not rows:
-        return
-
-    api_url = str(config.get("message_api_url", "") or "").strip()
-    for _, target_id, login_id in rows:
-        target_id = str(target_id or "").strip()
-        login_id = str(login_id or "").strip()
-        if not target_id or not login_id:
-            continue
-        await alter_collaboration_message_status(
-            api_url=api_url,
-            code=str(config.get("message_code", "") or "").strip(),
-            login_id_list=[login_id],
-            target_id=target_id,
-            biz_state=biz_state,
-        )
-
-
-async def _refresh_collaboration_lists(
-    login_ids: list[str],
-    *,
-    config: dict[str, Any],
-) -> None:
-    api_url = str(config.get("message_api_url", "") or "").strip()
-    unique_ids = []
-    seen = set()
-    for login_id in login_ids:
-        value = str(login_id or "").strip()
-        if not value or value in seen:
-            continue
-        seen.add(value)
-        unique_ids.append(value)
-    for login_id in unique_ids:
-        await refresh_collaboration_message_list(
-            api_url=api_url,
-            login_id_list=[login_id],
-        )
-
-
-async def _send_item_collaboration_messages(
-    rows: list[tuple[int, str, str, Any, str, str]],
-    *,
-    meeting_name: str,
-    summary: str,
-    decisions: list[str],
-    subject_prefix: str,
-    config: dict[str, Any],
-    creator_collab_no: str,
-) -> list[tuple[int, str, str, str, str]]:
-    if not rows:
-        return []
-
-    api_url = str(config.get("message_api_url", "") or "").strip()
-    code = str(config.get("message_code", "") or "").strip()
-    link_url = str(config.get("message_link_url", "") or "").strip()
-    link_mobile_url = str(config.get("message_mobile_link_url", "") or "").strip()
-    title = _build_message_title(meeting_name, subject_prefix)
-    sent_items: list[tuple[int, str, str, str, str]] = []
-
-    for item_id, meeting_id, content, due_date, _owner_name, owner_collab_no in rows:
-        if not owner_collab_no:
-            continue
-        context = build_message_body(
-            title=title,
-            meeting_name=meeting_name,
-            summary=summary,
-            decisions=decisions,
-            tasks=[build_task_deadline_text(content, due_date)],
-        )
-        target_id = _build_collab_target_id(code, str(meeting_id), int(item_id), str(owner_collab_no))
-        await send_collaboration_message(
-            api_url=api_url,
-            code=code,
-            creator=creator_collab_no,
-            title=title,
-            context=context,
-            login_id_list=[str(owner_collab_no)],
-            target_id=target_id,
-            link_url=link_url,
-            link_mobile_url=link_mobile_url,
-        )
-        sent_items.append((int(item_id), target_id, str(owner_collab_no), title, context))
-
-    return sent_items
-
-
 def _normalize_due_date(value):
     return "" if value in (None, "None") else str(value)
 
@@ -317,23 +196,20 @@ def _item_changed(existing_row, payload_item):
     )
 
 
-def _build_dispatch_targets(rows) -> tuple[dict[str, dict[str, Any]], list[int], list[tuple[int, str, str, Any, str, str]]]:
+def _build_dispatch_targets(rows) -> tuple[dict[str, dict[str, Any]], list[int]]:
     owner_items: dict[str, dict[str, Any]] = {}
     synced_ids: list[int] = []
-    collab_rows: list[tuple[int, str, str, Any, str, str]] = []
 
     for row in rows:
-        item_id, meeting_id, content, due_date, owner_name, owner_email, owner_collab_no = row[:7]
+        item_id, meeting_id, content, due_date, owner_name, owner_email = row[:6]
         task_text = f"{content} (截止: {due_date or '待定'})"
         if owner_email:
             if owner_email not in owner_items:
                 owner_items[owner_email] = {"name": owner_name, "tasks": []}
             owner_items[owner_email]["tasks"].append(task_text)
-        if owner_collab_no:
-            collab_rows.append((int(item_id), str(meeting_id), content, due_date, owner_name, str(owner_collab_no)))
         synced_ids.append(int(item_id))
 
-    return owner_items, synced_ids, collab_rows
+    return owner_items, synced_ids
 
 
 @router.get("")
@@ -585,7 +461,6 @@ async def update_meeting(meeting_id: str, payload: UpdateMeetingPayload, current
 async def dispatch_meeting(meeting_id: str, current_user: dict = Depends(get_current_user)):
     pool = await get_pool()
     emails_sent = 0
-    messages_sent = 0
     meeting_name = ""
     rows = []
 
@@ -605,18 +480,11 @@ async def dispatch_meeting(meeting_id: str, current_user: dict = Depends(get_cur
             except Exception:
                 meeting_decisions = []
 
-            await cur.execute(
-                "SELECT COALESCE(collab_no, '') FROM contacts WHERE username=%s LIMIT 1",
-                (current_user["sub"],),
-            )
-            operator_row = await cur.fetchone()
-            operator_collab_no = (operator_row[0] if operator_row else "") or ""
             dispatch_config = await get_dispatch_config_from_db()
 
             await cur.execute(
                 """
-                SELECT a.id, a.meeting_id, a.content, a.due_date, c.name, COALESCE(c.email, ''), COALESCE(c.collab_no, ''),
-                       COALESCE(a.collab_message_target_id, '')
+                SELECT a.id, a.meeting_id, a.content, a.due_date, c.name, COALESCE(c.email, '')
                 FROM action_items a
                 LEFT JOIN contacts c ON a.owner_id = c.id
                 WHERE a.meeting_id=%s
@@ -624,7 +492,7 @@ async def dispatch_meeting(meeting_id: str, current_user: dict = Depends(get_cur
                 (meeting_id,),
             )
             rows = await cur.fetchall()
-            owner_items, synced_ids, _collab_rows = _build_dispatch_targets(rows)
+            owner_items, synced_ids = _build_dispatch_targets(rows)
 
             if dispatch_config.get("email_enabled"):
                 try:
@@ -638,40 +506,6 @@ async def dispatch_meeting(meeting_id: str, current_user: dict = Depends(get_cur
                 except Exception as error:
                     raise HTTPException(status_code=500, detail=f"邮件发送失败: {str(error)}")
 
-            if dispatch_config.get("message_enabled"):
-                creator_collab_no = (dispatch_config.get("message_creator_collab_no") or operator_collab_no or "").strip()
-                if not creator_collab_no:
-                    raise HTTPException(status_code=400, detail="消息发送已启用，但未配置创建人协同号")
-                try:
-                    sent_items = await _send_item_collaboration_messages(
-                        [(row[0], row[1], row[2], row[3], row[4], row[6]) for row in rows],
-                        meeting_name=meeting_name,
-                        summary=meeting_summary or "",
-                        decisions=meeting_decisions,
-                        subject_prefix="待办任务",
-                        config=dispatch_config,
-                        creator_collab_no=creator_collab_no,
-                    )
-                    messages_sent = len(sent_items)
-                    for item_id, target_id, _login_id, message_title, message_context in sent_items:
-                        await cur.execute(
-                            """
-                            UPDATE action_items
-                            SET collab_message_target_id=%s,
-                                collab_message_title=%s,
-                                collab_message_context=%s,
-                                collab_message_sent_at=NOW(),
-                                collab_message_deleted_at=NULL
-                            WHERE id=%s
-                            """,
-                            (target_id, message_title, message_context, item_id),
-                        )
-                    if sent_items:
-                        await asyncio.sleep(2)
-                        await _refresh_collaboration_lists([item[2] for item in sent_items], config=dispatch_config)
-                except Exception as error:
-                    raise HTTPException(status_code=500, detail=f"协同消息发送失败: {str(error)}")
-
             await cur.execute("UPDATE meetings SET status='dispatched' WHERE id=%s", (meeting_id,))
             if synced_ids:
                 placeholders = ",".join(["%s"] * len(synced_ids))
@@ -684,19 +518,18 @@ async def dispatch_meeting(meeting_id: str, current_user: dict = Depends(get_cur
     await create_notification(
         user_id=current_user["sub"],
         title="行动项已分发",
-        content=f"《{meeting_name}》已完成任务分发，涉及 {len(rows)} 条行动项，邮件 {emails_sent} 封，消息 {messages_sent} 条。",
+        content=f"《{meeting_name}》已完成任务分发，涉及 {len(rows)} 条行动项，邮件 {emails_sent} 封。",
         category="dispatch",
         related_type="meeting",
         related_id=meeting_id,
     )
-    return {"ok": True, "dispatched_count": len(rows), "emails_sent": emails_sent, "messages_sent": messages_sent}
+    return {"ok": True, "dispatched_count": len(rows), "emails_sent": emails_sent}
 
 
 @router.post("/{meeting_id}/resync")
 async def resync_meeting_changes(meeting_id: str, current_user: dict = Depends(get_current_user)):
     pool = await get_pool()
     emails_sent = 0
-    messages_sent = 0
     changed_count = 0
     meeting_name = ""
 
@@ -719,18 +552,11 @@ async def resync_meeting_changes(meeting_id: str, current_user: dict = Depends(g
             except Exception:
                 meeting_decisions = []
 
-            await cur.execute(
-                "SELECT COALESCE(collab_no, '') FROM contacts WHERE username=%s LIMIT 1",
-                (current_user["sub"],),
-            )
-            operator_row = await cur.fetchone()
-            operator_collab_no = (operator_row[0] if operator_row else "") or ""
             dispatch_config = await get_dispatch_config_from_db()
 
             await cur.execute(
                 """
-                SELECT a.id, a.meeting_id, a.content, a.due_date, c.name, COALESCE(c.email, ''), COALESCE(c.collab_no, ''),
-                       COALESCE(a.collab_message_target_id, '')
+                SELECT a.id, a.meeting_id, a.content, a.due_date, c.name, COALESCE(c.email, '')
                 FROM action_items a
                 LEFT JOIN contacts c ON a.owner_id = c.id
                 WHERE a.meeting_id=%s AND a.updated_after_dispatch=1
@@ -740,9 +566,9 @@ async def resync_meeting_changes(meeting_id: str, current_user: dict = Depends(g
             rows = await cur.fetchall()
             changed_count = len(rows)
             if changed_count == 0:
-                return {"ok": True, "emails_sent": 0, "messages_sent": 0, "changed_count": 0}
+                return {"ok": True, "emails_sent": 0, "changed_count": 0}
 
-            owner_items, synced_ids, _collab_rows = _build_dispatch_targets(rows)
+            owner_items, synced_ids = _build_dispatch_targets(rows)
 
             if dispatch_config.get("email_enabled"):
                 try:
@@ -756,57 +582,6 @@ async def resync_meeting_changes(meeting_id: str, current_user: dict = Depends(g
                 except Exception as error:
                     raise HTTPException(status_code=500, detail=f"变更邮件发送失败: {str(error)}")
 
-            if dispatch_config.get("message_enabled"):
-                creator_collab_no = (dispatch_config.get("message_creator_collab_no") or operator_collab_no or "").strip()
-                if not creator_collab_no:
-                    raise HTTPException(status_code=400, detail="消息发送已启用，但未配置创建人协同号")
-                try:
-                    alter_rows = [
-                        (
-                            int(row[0]),
-                            str(row[7] or "").strip(),
-                            _extract_collab_login_id(str(row[7] or ""), str(row[6] or "")),
-                        )
-                        for row in rows
-                        if str(row[7] or "").strip() and _extract_collab_login_id(str(row[7] or ""), str(row[6] or ""))
-                    ]
-                    if alter_rows:
-                        await _alter_existing_collaboration_messages(alter_rows, config=dispatch_config, biz_state="1")
-
-                    sent_items = await _send_item_collaboration_messages(
-                        [(row[0], row[1], row[2], row[3], row[4], row[6]) for row in rows],
-                        meeting_name=meeting_name,
-                        summary=meeting_summary or "",
-                        decisions=meeting_decisions,
-                        subject_prefix="任务变更同步",
-                        config=dispatch_config,
-                        creator_collab_no=creator_collab_no,
-                    )
-                    messages_sent = len(sent_items)
-                    for item_id, target_id, _login_id, message_title, message_context in sent_items:
-                        await cur.execute(
-                            """
-                            UPDATE action_items
-                            SET collab_message_target_id=%s,
-                                collab_message_title=%s,
-                                collab_message_context=%s,
-                                collab_message_sent_at=NOW(),
-                                collab_message_deleted_at=NULL
-                            WHERE id=%s
-                            """,
-                            (target_id, message_title, message_context, item_id),
-                        )
-
-                    refresh_ids = [item[2] for item in sent_items]
-                    for _, _, login_id in alter_rows:
-                        if login_id:
-                            refresh_ids.append(login_id)
-                    if refresh_ids:
-                        await asyncio.sleep(2)
-                        await _refresh_collaboration_lists(refresh_ids, config=dispatch_config)
-                except Exception as error:
-                    raise HTTPException(status_code=500, detail=f"协同消息同步失败: {str(error)}")
-
             if synced_ids:
                 placeholders = ",".join(["%s"] * len(synced_ids))
                 dispatched_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
@@ -818,12 +593,12 @@ async def resync_meeting_changes(meeting_id: str, current_user: dict = Depends(g
     await create_notification(
         user_id=current_user["sub"],
         title="行动项变更已同步",
-        content=f"《{meeting_name}》已同步 {changed_count} 条变更任务，邮件 {emails_sent} 封，消息 {messages_sent} 条。",
+        content=f"《{meeting_name}》已同步 {changed_count} 条变更任务，邮件 {emails_sent} 封。",
         category="dispatch",
         related_type="meeting",
         related_id=meeting_id,
     )
-    return {"ok": True, "emails_sent": emails_sent, "messages_sent": messages_sent, "changed_count": changed_count}
+    return {"ok": True, "emails_sent": emails_sent, "changed_count": changed_count}
 
 
 @router.delete("/{meeting_id}")

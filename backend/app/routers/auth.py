@@ -47,7 +47,7 @@ async def login(form: OAuth2PasswordRequestForm = Depends()):
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             await cur.execute(
-                "SELECT id, username, name, role, hashed_password, COALESCE(email, ''), COALESCE(collab_no, '') FROM contacts WHERE username = %s LIMIT 1",
+                "SELECT id, username, name, role, hashed_password, COALESCE(email, '') FROM contacts WHERE username = %s LIMIT 1",
                 (form.username,),
             )
             row = await cur.fetchone()
@@ -59,7 +59,6 @@ async def login(form: OAuth2PasswordRequestForm = Depends()):
                     "role": row[3],
                     "hashed_password": row[4],
                     "email": row[5],
-                    "collab_no": row[6],
                 }
                 verified, upgraded_hash = verify_and_upgrade_password(form.password, user_record["hashed_password"])
                 if not verified:
@@ -86,7 +85,6 @@ async def login(form: OAuth2PasswordRequestForm = Depends()):
             "name": user_record["name"],
             "role": user_record["role"],
             "email": user_record["email"],
-            "collab_no": user_record["collab_no"],
         },
     }
 

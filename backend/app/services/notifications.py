@@ -21,10 +21,23 @@ CREATE TABLE IF NOT EXISTS notifications (
 
 async def ensure_notifications_table() -> None:
     from app.database import get_pool
+    from app.config import settings
 
     pool = await get_pool()
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
+            await cur.execute(
+                """
+                SELECT 1
+                FROM information_schema.TABLES
+                WHERE TABLE_SCHEMA=%s AND TABLE_NAME='notifications'
+                LIMIT 1
+                """,
+                (settings.mysql_db,),
+            )
+            if await cur.fetchone():
+                return
+
             await cur.execute(CREATE_NOTIFICATIONS_TABLE_SQL)
 
 

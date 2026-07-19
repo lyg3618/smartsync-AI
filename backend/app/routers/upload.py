@@ -12,7 +12,6 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPExcepti
 from app.config import settings
 from app.database import get_pool
 from app.routers.auth import get_current_user
-from app.services.local_asr import LocalTranscriptionError
 from app.services.notifications import create_notification
 from app.services.tingwu import TingwuError
 from app.services.transcription import run_transcription
@@ -89,8 +88,7 @@ async def _process_transcription(
 ) -> None:
     try:
         logger.info(
-            "[TRANSCRIPTION_JOB] start provider=%s task_id=%s meeting_id=%s meeting_name=%s",
-            settings.asr_provider,
+            "[TRANSCRIPTION_JOB] start provider=tingwu task_id=%s meeting_id=%s meeting_name=%s",
             task_id,
             meeting_id,
             meeting_name,
@@ -141,17 +139,6 @@ async def _process_transcription(
             related_id=meeting_id,
         )
         logger.info("[TRANSCRIPTION_JOB] success task_id=%s segments=%s", task_id, len(segments))
-    except LocalTranscriptionError as exc:
-        logger.exception("[TRANSCRIPTION_JOB] local_error task_id=%s", task_id)
-        await _update_task(task_id, "failed", 100)
-        await create_notification(
-            user_id=user_id,
-            title="会议转写失败",
-            content=f"《{meeting_name}》本地转写失败：{exc}",
-            category="warning",
-            related_type="meeting",
-            related_id=meeting_id,
-        )
     except TingwuError as exc:
         logger.exception("[TRANSCRIPTION_JOB] tingwu_error task_id=%s", task_id)
         await _update_task(task_id, "failed", 100)
@@ -190,8 +177,8 @@ async def upload_file(
         raise HTTPException(400, "Provide either file or url.")
     if file and url:
         raise HTTPException(400, "Provide file or url, not both.")
-    if settings.asr_provider == "tingwu" and not settings.tingwu_enabled:
-        raise HTTPException(400, "TINGWU is disabled. Set `ASR_PROVIDER=local` or enable Tingwu in backend .env")
+    if not settings.tingwu_enabled:
+        raise HTTPException(503, "Tingwu transcription is disabled in this deployment.")
 
     task_id = str(uuid.uuid4())
     meeting_id = str(uuid.uuid4())[:8]

@@ -4,7 +4,6 @@ from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BASE_DIR = Path(__file__).resolve().parents[1]
-PROJECT_DIR = BASE_DIR.parent
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=str(BASE_DIR / ".env"), extra="ignore")
@@ -30,11 +29,7 @@ class Settings(BaseSettings):
     llm_base_url: str = "http://34.124.175.101:8371/v1"
     llm_model: str = "gpt-4o-mini"
 
-    # Whisper
-    whisper_model: str = "base"
-
-    # Transcription provider
-    asr_provider: str = "local"
+    # Transcription
     transcription_enabled: bool = True
 
     # Tingwu (Alibaba Cloud)
@@ -50,32 +45,18 @@ class Settings(BaseSettings):
     tingwu_app_key: str = ""
     tingwu_endpoint: str = "tingwu.cn-beijing.aliyuncs.com"
     tingwu_poll_interval_sec: int = 8
-    tingwu_poll_timeout_sec: int = 3600
-    # If you upload local files, this must be a public URL prefix that Tingwu can access.
-    # Example: https://your-domain.com/uploads
-    tingwu_file_url_base: str = ""
-    tingwu_file_upload_provider: str = "auto"
-    tingwu_gradio_base_url: str = "https://qwen-qwen3-asr.ms.show"
-    tingwu_gradio_file_prefix: str = "https://qwen-qwen3-asr.ms.show/gradio_api/file="
-    tingwu_gradio_x_studio_token: str = ""
-    tingwu_gradio_upload_timeout_sec: int = 600
-
-    # FunASR local transcription + CAM++ + Faiss
-    funasr_asr_model: str = "damo/speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-pytorch"
-    funasr_vad_model: str = "damo/speech_fsmn_vad_zh-cn-16k-common-pytorch"
-    funasr_punc_model: str = "damo/punc_ct-transformer_cn-en-common-vocab471067-large"
-    funasr_campp_model: str = "iic/speech_campplus_sv_zh-cn_16k-common"
-    funasr_model_dir: str = str(PROJECT_DIR / "models" / "funasr")
-    funasr_device: str = "cpu"
-    funasr_ngpu: int = 0
-    funasr_disable_update: bool = True
-    funasr_hub: str = "ms"
-    funasr_sample_rate: int = 16000
-    funasr_batch_size_s: int = 300
-    funasr_min_segment_ms: int = 800
-    funasr_merge_gap_ms: int = 1200
-    funasr_max_speakers: int = 8
-    funasr_speaker_similarity_threshold: float = 0.72
+    tingwu_poll_timeout_sec: int = 14400
+    # Offline local recordings use S3-compatible object storage. SigV4 and
+    # path-style addressing are enforced by the client implementation.
+    tingwu_s3_endpoint: str = ""
+    tingwu_s3_bucket: str = ""
+    tingwu_s3_region: str = "auto"
+    tingwu_s3_user_agent: str = "SmartSync"
+    tingwu_s3_public_url_base: str = ""
+    tingwu_s3_prefix: str = "smartsync/tingwu"
+    tingwu_s3_url_expires_sec: int = 14400
+    tingwu_s3_access_key_id: str = ""
+    tingwu_s3_access_key_secret: str = ""
 
     # SMTP
     smtp_host: str = "smtp.gmail.com"

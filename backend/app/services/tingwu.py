@@ -8,16 +8,15 @@ against the Tingwu endpoint.
 import asyncio
 import hashlib
 import hmac
+import ipaddress
 import json
 import logging
 import mimetypes
 import re
-import secrets
-import string
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Optional
-from urllib.parse import quote
+from urllib.parse import quote, unquote, urlsplit, urlunsplit
 from uuid import uuid4
 
 import httpx
@@ -29,7 +28,7 @@ logger = logging.getLogger("uvicorn.error")
 
 TINGWU_HOST = "tingwu.cn-beijing.aliyuncs.com"
 TINGWU_ENDPOINT = f"https://{TINGWU_HOST}"
-_UPLOAD_ID_ALPHABET = string.ascii_lowercase + string.digits
+_MIN_S3_URL_EXPIRES_SEC = 3 * 60 * 60
 
 
 class TingwuError(RuntimeError):
@@ -163,119 +162,240 @@ def _get_credentials():
     return ak, sk, app_key
 
 
-def _generate_upload_id(length: int = 11) -> str:
-    return "".join(secrets.choice(_UPLOAD_ID_ALPHABET) for _ in range(length))
+def _validate_tingwu_file_url(url: str) -> str:
+    value = str(url or "").strip()
+    if not value or any(character.isspace() for character in value):
+        raise TingwuError("听悟文件 URL 不能为空或包含空格。")
+    parsed = urlsplit(value)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise TingwuError("听悟文件 URL 必须是可公网访问的 HTTP/HTTPS 域名地址。")
+    try:
+        ipaddress.ip_address(parsed.hostname)
+    except ValueError:
+        pass
+    else:
+        raise TingwuError("听悟文件 URL 不能使用 IP 地址，请使用公网域名。")
+    return value
 
 
-def _build_gradio_file_url(uploaded_path: str) -> str:
-    path = (uploaded_path or "").strip()
-    if not path:
-        raise TingwuError("Gradio upload returned an empty file path.")
-    if path.startswith(("http://", "https://")):
-        return path
-    prefix = (settings.tingwu_gradio_file_prefix or "").strip()
-    if not prefix:
-        base_url = (settings.tingwu_gradio_base_url or "https://qwen-qwen3-asr.ms.show").rstrip("/")
-        prefix = f"{base_url}/gradio_api/file="
-    normalized_path = path if path.startswith("/") else f"/{path}"
-    encoded_path = quote(normalized_path, safe="/%")
-    return f"{prefix}{encoded_path}"
+def _safe_url_for_log(url: str) -> str:
+    parsed = urlsplit(str(url or ""))
+    return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, "", ""))
 
 
-def _build_configured_file_url(local_path: str) -> str:
-    base_url = (settings.tingwu_file_url_base or "").strip().rstrip("/")
+def _normalize_s3_endpoint() -> str:
+    endpoint = str(settings.tingwu_s3_endpoint or "").strip().rstrip("/")
+    if not endpoint:
+        raise TingwuError("TINGWU_S3_ENDPOINT 未配置。")
+    if "://" not in endpoint:
+        endpoint = f"https://{endpoint}"
+    parsed = urlsplit(endpoint)
+    if parsed.scheme != "https" or not parsed.hostname:
+        raise TingwuError("TINGWU_S3_ENDPOINT 必须是 HTTPS 域名地址。")
+    return endpoint
+
+
+def _normalized_s3_prefix() -> str:
+    raw_prefix = str(settings.tingwu_s3_prefix or "smartsync/tingwu").strip("/")
+    segments = []
+    for raw_segment in raw_prefix.split("/"):
+        segment = re.sub(r"[^A-Za-z0-9_-]+", "-", raw_segment).strip("-")
+        if segment:
+            segments.append(segment)
+    return "/".join(segments) or "smartsync/tingwu"
+
+
+def _build_public_s3_url(object_key: str) -> str:
+    base_url = str(settings.tingwu_s3_public_url_base or "").strip().rstrip("/")
     if not base_url:
         return ""
-
-    path = Path(local_path)
-    if not path.is_file():
-        raise TingwuError(f"Audio file does not exist: {local_path}")
-
-    return f"{base_url}/{quote(path.name, safe='')}"
+    parsed = urlsplit(base_url)
+    if parsed.scheme != "https" or not parsed.hostname or parsed.query or parsed.fragment:
+        raise TingwuError("TINGWU_S3_PUBLIC_URL_BASE 必须是不含查询参数的 HTTPS 地址。")
+    return _validate_tingwu_file_url(f"{base_url}/{quote(object_key, safe='/')}")
 
 
-def _get_gradio_upload_timeout_sec() -> float:
-    timeout_sec = getattr(settings, "tingwu_gradio_upload_timeout_sec", 600) or 600
-    return max(float(timeout_sec), 1.0)
+def _get_s3_credentials() -> tuple[str, str]:
+    access_key_id = str(settings.tingwu_s3_access_key_id or "").strip()
+    access_key_secret = str(settings.tingwu_s3_access_key_secret or "").strip()
+    if not access_key_id or not access_key_secret:
+        raise TingwuError(
+            "S3 凭证未配置；请在对象存储创建 AccessKey 后设置 "
+            "TINGWU_S3_ACCESS_KEY_ID/SECRET。"
+        )
+    return access_key_id, access_key_secret
 
 
-def _build_gradio_upload_timeout() -> httpx.Timeout:
-    timeout_sec = _get_gradio_upload_timeout_sec()
-    connect_timeout = min(30.0, timeout_sec)
-    return httpx.Timeout(
-        timeout_sec,
-        connect=connect_timeout,
-        read=timeout_sec,
-        write=timeout_sec,
-        pool=connect_timeout,
-    )
+def _build_s3_object_key(path: Path) -> str:
+    suffix = path.suffix.lower()
+    if not re.fullmatch(r"\.[a-z0-9]{1,10}", suffix):
+        suffix = ""
+    date_path = datetime.now(timezone.utc).strftime("%Y/%m/%d")
+    return f"{_normalized_s3_prefix()}/{date_path}/{uuid4().hex}{suffix}"
 
 
-def _upload_local_file_to_gradio_sync(local_path: str) -> str:
-    path = Path(local_path)
-    if not path.is_file():
-        raise TingwuError(f"Audio file does not exist: {local_path}")
+def _describe_s3_error(exc: Exception, bucket_name: str) -> str:
+    response = getattr(exc, "response", None)
+    if not isinstance(response, dict):
+        return str(exc)
 
-    base_url = (settings.tingwu_gradio_base_url or "https://qwen-qwen3-asr.ms.show").rstrip("/")
-    upload_id = _generate_upload_id()
-    upload_url = f"{base_url}/gradio_api/upload?upload_id={upload_id}"
-    content_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
-    headers = {
-        "accept": "*/*",
-        "origin": base_url,
-        "referer": f"{base_url}/",
-        "user-agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36"
-        ),
-        "x-studio-token": (settings.tingwu_gradio_x_studio_token or "").strip(),
-    }
+    metadata = response.get("ResponseMetadata") or {}
+    error = response.get("Error") or {}
+    status = metadata.get("HTTPStatusCode")
+    code = str(error.get("Code") or "").strip()
+    message = str(error.get("Message") or "").strip()
 
-    with path.open("rb") as file_obj:
-        files = {"files": (path.name, file_obj, content_type)}
-        try:
-            with httpx.Client(timeout=_build_gradio_upload_timeout(), follow_redirects=True) as client:
-                resp = client.post(upload_url, headers=headers, files=files)
-        except httpx.TimeoutException as exc:
-            timeout_sec = _get_gradio_upload_timeout_sec()
-            raise TingwuError(
-                f"Gradio upload timed out after {timeout_sec:.0f}s. "
-                "Set TINGWU_FILE_URL_BASE to a public /uploads URL, "
-                "increase TINGWU_GRADIO_UPLOAD_TIMEOUT_SEC, or use ASR_PROVIDER=local."
-            ) from exc
-        except httpx.RequestError as exc:
-            raise TingwuError(f"Gradio upload failed: {exc}") from exc
+    if status == 401 or code in {"401", "InvalidAccessKeyId", "SignatureDoesNotMatch"}:
+        return (
+            "S3 对象存储拒绝了 AccessKey（HTTP 401）。请重新生成并启用 "
+            f"AccessKey，确认它有 Bucket {bucket_name} 的对象读写权限；这里应填写对象存储 "
+            "AccessKey，而不是阿里云听悟 AccessKey。修改 backend/.env 后需重启后端"
+        )
+    if status == 403 or code in {"403", "AccessDenied"}:
+        return (
+            f"S3 AccessKey 已被识别，但无权写入 Bucket {bucket_name}（HTTP 403）。"
+            "请为该 AccessKey 授予对象上传、读取、查看元数据和分片上传权限"
+        )
 
-    logger.info("[TINGWU_UPLOAD] status=%s body=%s", resp.status_code, resp.text[:500])
+    details = ": ".join(part for part in (code, message) if part)
+    return details or str(exc)
+
+
+def _verify_download_url_sync(url: str) -> None:
     try:
-        data = resp.json()
+        with httpx.Client(timeout=30, follow_redirects=True) as client:
+            with client.stream(
+                "GET",
+                url,
+                headers={
+                    "Range": "bytes=0-0",
+                    "User-Agent": "SmartSync-Tingwu-URL-Check/1.0",
+                },
+            ) as response:
+                if response.status_code not in {200, 206}:
+                    raise TingwuError(
+                        "S3 对象存储已接收录音，但下载 URL 无法被公网客户端访问"
+                        f"（HTTP {response.status_code}）。听悟无法携带 S3 Authorization 请求头；"
+                        "请检查公共访问域名，或改用支持 SigV4 预签名 GET 的对象存储"
+                    )
+    except TingwuError:
+        raise
+    except httpx.HTTPError as exc:
+        raise TingwuError(f"验证听悟下载 URL 失败：{exc}") from exc
+
+
+def _upload_local_file_to_s3_sync(local_path: str) -> str:
+    path = Path(local_path)
+    if not path.is_file():
+        raise TingwuError(f"Audio file does not exist: {local_path}")
+
+    endpoint = _normalize_s3_endpoint()
+    bucket_name = str(settings.tingwu_s3_bucket or "").strip()
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{1,126}[A-Za-z0-9]", bucket_name):
+        raise TingwuError("TINGWU_S3_BUCKET 未配置或 Bucket 名称不合法。")
+    access_key_id, access_key_secret = _get_s3_credentials()
+
+    try:
+        import boto3
+        from boto3.s3.transfer import TransferConfig
+        from botocore.config import Config
+    except ImportError as exc:
+        raise TingwuError("缺少 S3 SDK，请安装 requirements 中的 boto3。") from exc
+
+    region_name = str(settings.tingwu_s3_region or "auto").strip() or "auto"
+    user_agent = str(settings.tingwu_s3_user_agent or "SmartSync").strip() or "SmartSync"
+    client = boto3.client(
+        "s3",
+        endpoint_url=endpoint,
+        region_name=region_name,
+        aws_access_key_id=access_key_id,
+        aws_secret_access_key=access_key_secret,
+        config=Config(
+            signature_version="s3v4",
+            s3={"addressing_style": "path"},
+            user_agent_extra=user_agent,
+            request_checksum_calculation="when_required",
+            response_checksum_validation="when_required",
+            retries={"max_attempts": 3, "mode": "standard"},
+        ),
+    )
+    object_key = _build_s3_object_key(path)
+    content_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+    file_size = path.stat().st_size
+    try:
+        client.upload_file(
+            Filename=str(path),
+            Bucket=bucket_name,
+            Key=object_key,
+            ExtraArgs={"ContentType": content_type},
+            Config=TransferConfig(
+                multipart_threshold=10 * 1024 * 1024,
+                multipart_chunksize=10 * 1024 * 1024,
+                max_concurrency=4,
+                use_threads=True,
+            ),
+        )
+        metadata = client.head_object(Bucket=bucket_name, Key=object_key)
     except Exception as exc:
-        raise TingwuError(f"Cannot parse Gradio upload response: {resp.text[:400]}") from exc
+        raise TingwuError(
+            f"上传录音到 S3 对象存储失败：{_describe_s3_error(exc, bucket_name)}"
+        ) from exc
 
-    if resp.status_code >= 400:
-        raise TingwuError(f"Gradio upload HTTP {resp.status_code}: {data}")
-    if not isinstance(data, list) or not data or not isinstance(data[0], str):
-        raise TingwuError(f"Unexpected Gradio upload response: {data}")
+    stored_size = int(metadata.get("ContentLength") or -1)
+    if stored_size != file_size:
+        raise TingwuError(
+            f"S3 对象长度校验失败：本地 {file_size} 字节，远端 {stored_size} 字节。"
+        )
 
-    return _build_gradio_file_url(data[0])
+    expires_sec = max(
+        _MIN_S3_URL_EXPIRES_SEC,
+        int(settings.tingwu_s3_url_expires_sec or _MIN_S3_URL_EXPIRES_SEC),
+    )
+    download_url = _build_public_s3_url(object_key)
+    if not download_url:
+        download_url = client.generate_presigned_url(
+            ClientMethod="get_object",
+            Params={"Bucket": bucket_name, "Key": object_key},
+            ExpiresIn=expires_sec,
+        )
+        download_url = _validate_tingwu_file_url(download_url)
+    try:
+        _verify_download_url_sync(download_url)
+    except Exception as exc:
+        logger.warning(
+            "[TINGWU_S3_DOWNLOAD_CHECK] failed; object retained bucket=%s object=%s",
+            bucket_name,
+            object_key,
+        )
+        raise TingwuError(
+            f"{exc}；原录音已保存在对象存储：{bucket_name}/{object_key}"
+        ) from exc
+    logger.info(
+        "[TINGWU_S3_UPLOAD] endpoint=%s bucket=%s object=%s bytes=%s expires_sec=%s",
+        endpoint,
+        bucket_name,
+        object_key,
+        file_size,
+        expires_sec,
+    )
+    return download_url
 
 
 def _prepare_tingwu_audio_url_sync(audio_source: str, source_kind: str) -> str:
     if source_kind == "url" or str(audio_source).startswith(("http://", "https://")):
-        return audio_source
+        return _validate_tingwu_file_url(audio_source)
+    return _upload_local_file_to_s3_sync(audio_source)
 
-    provider = (getattr(settings, "tingwu_file_upload_provider", "auto") or "auto").strip().lower()
-    configured_url = _build_configured_file_url(audio_source)
-    if provider in {"auto", "public", "public_url", "file_url"} and configured_url:
-        logger.info("[TINGWU_AUDIO_URL] using TINGWU_FILE_URL_BASE for file=%s", Path(audio_source).name)
-        return configured_url
-    if provider in {"public", "public_url", "file_url"}:
-        raise TingwuError("TINGWU_FILE_URL_BASE is required when TINGWU_FILE_UPLOAD_PROVIDER=public_url.")
-    if provider not in {"auto", "gradio"}:
-        raise TingwuError(
-            "Unsupported TINGWU_FILE_UPLOAD_PROVIDER. Use auto, public_url, or gradio."
-        )
-    return _upload_local_file_to_gradio_sync(audio_source)
+
+def _ensure_tingwu_file_extension(file_name: str, audio_url: str) -> str:
+    name = str(file_name or "").strip() or "audio"
+    if Path(name).suffix:
+        return name
+    source_name = Path(unquote(urlsplit(audio_url).path)).name
+    suffix = Path(source_name).suffix.lower()
+    if re.fullmatch(r"\.[a-z0-9]{1,10}", suffix):
+        return f"{name}{suffix}"
+    return name
 
 
 def _submit_task_sync(audio_url: str, file_name: str) -> str:
@@ -286,7 +406,7 @@ def _submit_task_sync(audio_url: str, file_name: str) -> str:
         "Input": {
             "SourceLanguage": "cn",
             "TaskKey": uuid4().hex,
-            "FileName": file_name,
+            "FileName": _ensure_tingwu_file_extension(file_name, audio_url),
             "FileUrl": audio_url,
         },
         "Parameters": {
@@ -504,7 +624,11 @@ async def run_tingwu_transcription(
         if asyncio.iscoroutine(maybe):
             await maybe
     audio_url = await asyncio.to_thread(_prepare_tingwu_audio_url_sync, audio_source, source_kind)
-    logger.info("[TINGWU] submit start file_name=%s audio_url=%s", file_name, audio_url)
+    logger.info(
+        "[TINGWU] submit start file_name=%s audio_url=%s",
+        file_name,
+        _safe_url_for_log(audio_url),
+    )
     if on_status:
         maybe = on_status("SUBMITTING")
         if asyncio.iscoroutine(maybe):
@@ -518,7 +642,10 @@ async def run_tingwu_transcription(
     while True:
         data = await asyncio.to_thread(_query_task_sync, task_id)
         status = str(data.get("TaskStatus", "")).upper()
-        snapshot = {k: data.get(k) for k in ("TaskStatus", "StatusText", "Code", "Message")}
+        snapshot = {
+            k: data.get(k)
+            for k in ("TaskStatus", "StatusText", "Code", "Message", "ErrorCode", "ErrorMessage")
+        }
         logger.info("[TINGWU_POLL] task_id=%s status=%s snap=%s", task_id, status, json.dumps(snapshot, ensure_ascii=False))
 
         if status != last_status:
@@ -548,7 +675,10 @@ async def run_tingwu_transcription(
             raise TingwuError("Task succeeded but no transcript segments found.")
 
         if status in {"FAILED", "CANCELED", "TIME_EXPIRED", "INVALID"}:
-            raise TingwuError(f"Tingwu task status={status}.")
+            error_code = data.get("ErrorCode") or data.get("Code") or ""
+            error_message = data.get("ErrorMessage") or data.get("Message") or ""
+            detail = ": ".join(str(value).strip() for value in (error_code, error_message) if str(value).strip())
+            raise TingwuError(f"Tingwu task status={status}{f' ({detail})' if detail else ''}.")
 
         if asyncio.get_running_loop().time() >= timeout_at:
             raise TingwuError("Tingwu polling timed out.")

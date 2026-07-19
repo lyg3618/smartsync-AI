@@ -45,7 +45,18 @@
         <section class="left-pane">
           <div class="pane-card">
             <div class="pane-title"><el-icon><Headset /></el-icon>会议音频</div>
-            <audio v-if="meeting.audio_url" :src="meeting.audio_url" controls class="audio-player" />
+            <p v-if="meeting.audio_url" class="audio-timeline-hint">点击逐字稿可跳转到对应录音位置。</p>
+            <audio
+              v-if="meeting.audio_url"
+              ref="audioPlayer"
+              :src="meeting.audio_url"
+              controls
+              preload="metadata"
+              class="audio-player"
+              @timeupdate="syncAudioPosition"
+              @seeked="syncAudioPosition"
+              @ended="resetAudioPosition"
+            />
             <div v-else class="empty-box">当前会议暂无可播放音频。</div>
           </div>
 
@@ -57,17 +68,22 @@
               </div>
             </div>
             <div class="transcript-list">
-              <div
+              <button
                 v-for="seg in meeting.transcript || []"
                 :key="seg.id || `${seg.start_ms}-${seg.end_ms}`"
+                type="button"
                 class="seg-item"
+                :class="{ 'is-current': isCurrentSegment(seg) }"
+                :disabled="!meeting.audio_url"
+                :aria-label="meeting.audio_url ? `从 ${msToTime(seg.start_ms)} 播放：${transcriptText(seg)}` : undefined"
+                @click="seekToSegment(seg)"
               >
-                <div class="seg-meta">
-                  <div class="seg-time">{{ msToTime(seg.start_ms) }}</div>
-                  <div class="seg-speaker">{{ transcriptSpeaker(seg) }}</div>
-                </div>
-                <div class="seg-text">{{ transcriptText(seg) }}</div>
-              </div>
+                <span class="seg-meta">
+                  <span class="seg-time">{{ msToTime(seg.start_ms) }}</span>
+                  <span class="seg-speaker">{{ transcriptSpeaker(seg) }}</span>
+                </span>
+                <span class="seg-text">{{ transcriptText(seg) }}</span>
+              </button>
             </div>
           </div>
         </section>
@@ -404,6 +420,8 @@ const savingTemplateMinutes = ref(false)
 const speakerDialogVisible = ref(false)
 const speakerSaving = ref(false)
 const speakerMappings = ref([])
+const audioPlayer = ref(null)
+const currentAudioMs = ref(-1)
 
 const meeting = computed(() => store.currentMeeting)
 const isReadOnly = computed(() => {
@@ -476,6 +494,29 @@ function msToTime(ms) {
   const min = Math.floor(totalSec / 60)
   const sec = totalSec % 60
   return `${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
+}
+
+function syncAudioPosition(event) {
+  currentAudioMs.value = Math.max(0, Number(event?.currentTarget?.currentTime || 0) * 1000)
+}
+
+function resetAudioPosition() {
+  currentAudioMs.value = -1
+}
+
+function isCurrentSegment(seg) {
+  if (currentAudioMs.value < 0) return false
+  const startMs = Math.max(0, Number(seg?.start_ms || 0))
+  const endMs = Math.max(startMs + 1, Number(seg?.end_ms || startMs + 1))
+  return currentAudioMs.value >= startMs && currentAudioMs.value < endMs
+}
+
+function seekToSegment(seg) {
+  if (!audioPlayer.value || !meeting.value?.audio_url) return
+  const targetMs = Math.max(0, Number(seg?.start_ms || 0))
+  audioPlayer.value.currentTime = targetMs / 1000
+  currentAudioMs.value = targetMs
+  audioPlayer.value.play().catch(() => {})
 }
 
 function transcriptSpeaker(seg) {
@@ -940,6 +981,7 @@ function downloadTemplateMinutes() {
 }
 
 watch(meeting, () => {
+  resetAudioPosition()
   syncEditableState()
 }, { immediate: true })
 
@@ -999,12 +1041,16 @@ onMounted(async () => {
 .pane-title, .pane-title-row { display: flex; align-items: center; gap: 10px; color: var(--text); font-weight: 700; }
 .pane-title-row { justify-content: space-between; margin-bottom: 16px; }
 .inline-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.audio-timeline-hint { margin: 8px 0 12px; color: var(--text-muted); font-size: 12px; line-height: 1.5; }
 .audio-player { width: 100%; }
 .empty-box { min-height: 120px; display: grid; place-items: center; color: var(--text-muted); border: 1px dashed var(--border); border-radius: 18px; text-align: center; padding: 18px; }
 .transcript-card { min-height: 0; flex: 1; display: flex; flex-direction: column; overflow: hidden; }
 .transcript-list { display: flex; flex-direction: column; gap: 6px; flex: 1; min-height: 0; overflow: auto; padding-right: 4px; }
-.seg-item { position: relative; display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 10px; align-items: start; border: 1px solid color-mix(in oklab, var(--border) 88%, transparent); border-radius: 14px; padding: 8px 10px; background: color-mix(in oklab, var(--bg) 84%, var(--bg-card) 16%); }
-.seg-item::before { content: ''; position: absolute; left: 0; top: 8px; bottom: 8px; width: 3px; border-radius: 999px; background: color-mix(in oklab, var(--primary) 42%, transparent); opacity: .7; }
+.seg-item { width: 100%; display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 10px; align-items: start; border: 1px solid color-mix(in oklab, var(--border) 88%, transparent); border-radius: 14px; padding: 8px 10px; background: color-mix(in oklab, var(--bg) 84%, var(--bg-card) 16%); color: inherit; font: inherit; text-align: left; cursor: pointer; transition: border-color .18s cubic-bezier(.25, 1, .5, 1), background .18s cubic-bezier(.25, 1, .5, 1); }
+.seg-item:not(:disabled):hover { border-color: color-mix(in oklab, var(--primary) 28%, var(--border)); background: color-mix(in oklab, var(--primary) 6%, var(--bg-card)); }
+.seg-item:focus-visible { outline: 2px solid color-mix(in oklab, var(--primary) 72%, transparent); outline-offset: 2px; }
+.seg-item.is-current { border-color: color-mix(in oklab, var(--primary) 52%, var(--border)); background: color-mix(in oklab, var(--primary) 10%, var(--bg-card)); }
+.seg-item:disabled { cursor: default; }
 .seg-meta { display: flex; flex-direction: column; gap: 6px; }
 .seg-time { display: inline-flex; align-items: center; justify-content: center; min-height: 24px; padding: 0 8px; border-radius: 999px; background: color-mix(in oklab, var(--bg-card) 92%, var(--bg) 8%); color: var(--text-muted); margin-bottom: 0; line-height: 1; font-size: 11px; font-weight: 700; letter-spacing: .02em; }
 .seg-speaker { display: inline-flex; align-items: center; justify-content: center; min-height: 24px; padding: 0 10px; border-radius: 999px; background: color-mix(in oklab, var(--primary) 14%, var(--bg-card)); color: color-mix(in oklab, var(--primary) 72%, var(--text)); font-size: 11px; font-weight: 700; letter-spacing: .02em; }
@@ -1108,6 +1154,7 @@ onMounted(async () => {
 @media (prefers-reduced-motion: reduce) {
   .tab-btn,
   .action-overview-progress__fill,
+  .seg-item,
   .action-sheet-enter-active,
   .action-sheet-leave-active { transition: none; }
 }
@@ -1120,8 +1167,7 @@ onMounted(async () => {
 @media (max-width: 860px) {
   .topbar { grid-template-columns: 1fr; }
   .content-grid { grid-template-columns: 1fr; }
-  .seg-item { grid-template-columns: 1fr; gap: 6px; padding-left: 12px; }
-  .seg-item::before { top: 10px; bottom: 10px; }
+  .seg-item { grid-template-columns: 1fr; gap: 6px; }
   .seg-time { justify-self: start; }
   .action-stack-layout { grid-template-columns: 1fr; }
   .action-sidebar { max-height: none; }
