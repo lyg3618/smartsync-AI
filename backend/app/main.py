@@ -5,8 +5,6 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.concurrency import iterate_in_threadpool
-import json
 from app.database import get_pool, close_pool, ensure_runtime_tables
 
 
@@ -38,49 +36,11 @@ app.add_middleware(
 
 class LoggingMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
-        # 1. Log incoming request details
-        _safe_print(f"\n{_log_prefix()} {'='*60}")
-        _safe_print(f"{_log_prefix()} REQUEST: {request.method} {request.url}")
-        
-        # Query params
-        if request.query_params:
-            _safe_print(f"{_log_prefix()} PARAMS: {dict(request.query_params)}")
-            
-        # Body (need to carefully read and restore it for the actual endpoint)
-        body_bytes = b""
-        if request.method in ["POST", "PUT", "PATCH"]:
-            body_bytes = await request.body()
-            if body_bytes:
-                try:
-                    parsed_body = json.loads(body_bytes)
-                    _safe_print(f"{_log_prefix()} BODY  : {json.dumps(parsed_body, ensure_ascii=False)}")
-                except:
-                    # Might be a file upload (multipart/form-data)
-                    _safe_print(f"{_log_prefix()} BODY  : <Raw data, length: {len(body_bytes)} bytes>")
-            
-            # Since we read the body, we must replace it so downstream can read it again
-            async def receive():
-                return {"type": "http.request", "body": body_bytes}
-            request._receive = receive
-
-        # 2. Process request & Log response
+        # Never log query strings or bodies: they may contain passwords, API
+        # keys, access tokens, meeting text, or short-lived realtime tickets.
+        _safe_print(f"{_log_prefix()} REQUEST: {request.method} {request.url.path}")
         response = await call_next(request)
-        
-        _safe_print(f"{_log_prefix()} RESPONSE STATUS: {response.status_code}")
-        
-        # Read the response body if possible (only for application/json)
-        content_type = response.headers.get("content-type", "")
-        if "application/json" in content_type:
-            response_body = [chunk async for chunk in response.body_iterator]
-            response.body_iterator = iterate_in_threadpool(iter(response_body))
-            if response_body:
-                try:
-                    resp_data = json.loads(response_body[0].decode())
-                    _safe_print(f"{_log_prefix()} RESULT : {json.dumps(resp_data, ensure_ascii=False)}")
-                except:
-                    pass
-                    
-        _safe_print(f"{_log_prefix()} {'='*60}\n")
+        _safe_print(f"{_log_prefix()} RESPONSE: {request.method} {request.url.path} {response.status_code}")
         return response
 
 app.add_middleware(LoggingMiddleware)

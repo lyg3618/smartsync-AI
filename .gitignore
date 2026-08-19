@@ -77,6 +77,9 @@ celerybeat-schedule
 
 # Environments
 .env
+.env.*
+!.env.example
+!.env.server.example
 .venv
 env/
 venv/
@@ -113,6 +116,9 @@ uploads/
 # IDE
 .vscode/
 .idea/
+.agents/
+.codex/
+.impeccable.md
 
 # OS
 .DS_Store
@@ -126,5 +132,8 @@ Thumbs.db
 *.swp
 *.bak
 
-# Docker
-.dockerignore
+# Local build caches and one-off generators
+frontend/.vite/
+backend/gen_*.py
+backups/
+

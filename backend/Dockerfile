@@ -1,21 +1,31 @@
 FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1
+
+ARG PIP_INDEX_URL=https://pypi.org/simple
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ARG NO_PROXY
 
 WORKDIR /app
 
-COPY requirements-server.txt /tmp/requirements-server.txt
+COPY requirements-server.txt /tmp/requirements.txt
+RUN python -m pip install --upgrade pip --index-url "${PIP_INDEX_URL}" \
+    && python -m pip install --index-url "${PIP_INDEX_URL}" -r /tmp/requirements.txt
 
-RUN pip config set global.proxy http://172.16.31.97:8088 \
-    && pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple \
-    && pip install --no-cache-dir --upgrade pip \
-    && pip install --no-cache-dir -r /tmp/requirements-server.txt
+RUN groupadd --gid 10001 smartsync \
+    && useradd --uid 10001 --gid smartsync --create-home smartsync
 
-COPY . /app
+COPY --chown=smartsync:smartsync . /app
+RUN mkdir -p /app/uploads \
+    && chown -R smartsync:smartsync /app \
+    && chmod +x /app/docker-entrypoint.sh
 
-RUN mkdir -p /app/uploads
+USER smartsync
 
 EXPOSE 8000
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+ENTRYPOINT ["/app/docker-entrypoint.sh"]

@@ -136,7 +136,7 @@ const loading = ref(false)
 const searched = ref(false)
 const activeFilter = ref('all')
 const results = ref({ total: 0, meetings: [], transcripts: [], actions: [] })
-const exampleQueries = ['预算', '王芳', '待确认', '产品规划']
+const exampleQueries = ['预算', '成员甲', '待确认', '产品规划']
 
 const filters = computed(() => [
   { value: 'all', label: '全部结果', count: results.value.total || 0 },

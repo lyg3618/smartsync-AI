@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     mysql_host: str = "localhost"
     mysql_port: int = 3306
     mysql_user: str = "smartsync"
-    mysql_password: str = "smartsync123"
+    mysql_password: str = ""
     mysql_db: str = "smartsync"
 
     @property
@@ -20,14 +20,14 @@ class Settings(BaseSettings):
         return f"mysql+aiomysql://{self.mysql_user}:{self.mysql_password}@{self.mysql_host}:{self.mysql_port}/{self.mysql_db}?charset=utf8mb4"
 
     # JWT
-    secret_key: str = "change-me-in-production-32-chars!"
+    secret_key: str = ""
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 1440
 
     # LLM
-    llm_api_key: str = "sk-F3IjGiMYla9MwPyvhF3IjGiMYla9MwPyvh"
-    llm_base_url: str = "http://34.124.175.101:8371/v1"
-    llm_model: str = "gpt-4o-mini"
+    llm_api_key: str = ""
+    llm_base_url: str = ""
+    llm_model: str = ""
 
     # Transcription
     transcription_enabled: bool = True
@@ -59,11 +59,11 @@ class Settings(BaseSettings):
     tingwu_s3_access_key_secret: str = ""
 
     # SMTP
-    smtp_host: str = "smtp.gmail.com"
+    smtp_host: str = "smtp.example.com"
     smtp_port: int = 587
     smtp_user: str = ""
     smtp_pass: str = ""
-    smtp_from: str = "AI会议助手 <noreply@smartsync.ai>"
+    smtp_from: str = "SmartSync <noreply@example.com>"
 
     debug: bool = False
 

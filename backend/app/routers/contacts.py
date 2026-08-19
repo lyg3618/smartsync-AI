@@ -1,7 +1,7 @@
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.database import get_pool
 from app.routers.auth import get_current_user
@@ -15,6 +15,7 @@ class ContactCreate(BaseModel):
     name: str
     email: str = ""
     username: str | None = None
+    initial_password: str = Field(min_length=8, max_length=128)
 
 
 class ContactUpdate(BaseModel):
@@ -59,7 +60,7 @@ async def create_contact(contact: ContactCreate, current_user: dict = Depends(ge
         raise HTTPException(status_code=400, detail="用户名不能为空")
 
     pool = await get_pool()
-    hashed_password = hash_password("123456")
+    hashed_password = hash_password(contact.initial_password)
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             try:

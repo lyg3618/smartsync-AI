@@ -235,7 +235,7 @@
         <div class="member-dialog">
           <div class="member-dialog__intro">
             <h3>创建分发成员</h3>
-            <p>新增成员后可用于会议任务分发，默认登录密码为 123456。</p>
+            <p>新增成员后可用于会议任务分发，请设置独立的初始密码。</p>
           </div>
           <div class="form-grid member-grid">
             <div class="field">
@@ -245,6 +245,10 @@
             <div class="field">
               <label for="member-email">邮箱</label>
               <el-input id="member-email" v-model="newContact.email" size="large" placeholder="可留空" />
+            </div>
+            <div class="field">
+              <label for="member-password">初始密码</label>
+              <el-input id="member-password" v-model="newContact.initial_password" type="password" size="large" show-password placeholder="至少 8 个字符" />
             </div>
           </div>
         </div>
@@ -308,7 +312,7 @@ const notifications = ref([
 ])
 const dispatchConfig = ref(createDefaultDispatchConfig())
 const contacts = ref([])
-const newContact = ref({ name: '', email: '' })
+const newContact = ref({ name: '', email: '', initial_password: '' })
 const addContactDialogVisible = ref(false)
 const editContactDialogVisible = ref(false)
 const editingContact = ref({ id: '', name: '', email: '' })
@@ -588,11 +592,15 @@ async function addContact() {
     ElMessage.warning('请输入成员姓名')
     return
   }
+  if (newContact.value.initial_password.length < 8) {
+    ElMessage.warning('初始密码至少需要 8 个字符')
+    return
+  }
   addingContact.value = true
   try {
     await api.post('/contacts', newContact.value)
-    ElMessage.success('成员已添加，默认密码为 123456')
-    newContact.value = { name: '', email: '' }
+    ElMessage.success('成员已添加')
+    newContact.value = { name: '', email: '', initial_password: '' }
     addContactDialogVisible.value = false
     await loadContacts()
   } catch (error) {
@@ -603,7 +611,7 @@ async function addContact() {
 }
 
 function openAddContactDialog() {
-  newContact.value = { name: '', email: '' }
+  newContact.value = { name: '', email: '', initial_password: '' }
   addContactDialogVisible.value = true
 }
 
