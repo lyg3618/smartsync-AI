@@ -2,6 +2,32 @@
 
 SmartSync 是一个会议转写与协作系统，包含录音上传、实时记录、逐字稿、AI 摘要、行动项和邮件分发。
 
+## 界面预览
+
+### 首页
+
+| 首页概览 | 首页详情 |
+| --- | --- |
+| ![SmartSync 首页概览](img/首页1.png) | ![SmartSync 首页详情](img/首页2.png) |
+
+### 全文搜索
+
+![SmartSync 全文搜索](img/全文搜索.png)
+
+### 我的待办
+
+![SmartSync 我的待办](img/我的待办.png)
+
+### 消息中心
+
+![SmartSync 消息中心](img/消息中心.png)
+
+### 系统设置
+
+| 基础设置 | 服务配置 |
+| --- | --- |
+| ![SmartSync 系统基础设置](img/系统设置1.png) | ![SmartSync 服务配置](img/系统设置2.png) |
+
 ## 本地启动
 
 需要 Python 3.11+、Node.js 20+ 和 MySQL 8.0。
@@ -76,4 +102,16 @@ curl -fsS http://127.0.0.1:9090/api/health
 ```
 
 完整的 HTTPS、备份和故障处理说明见 [Docker部署说明.md](Docker部署说明.md)。
+
+## 参与贡献
+
+欢迎通过 Issue 提交问题或建议，也欢迎通过 Pull Request 改进 SmartSync。开始贡献前，请阅读 [贡献指南](CONTRIBUTING.md)，其中包含开发流程、测试要求和提交规范。
+
+## 安全
+
+如果你发现安全漏洞，请不要在公开 Issue 中披露漏洞细节。请按照 [安全说明](SECURITY.md) 使用 GitHub 的私有漏洞报告渠道联系维护者。
+
+## 许可证
+
+本项目基于 [MIT License](LICENSE) 开源。
 
